@@ -1,0 +1,8 @@
+{
+  "name": "Super Notes - Unified Knowledge Workspace",
+  "description": "A professional, minimalist note-taking platform designed for deep personal thinking and structured knowledge work, featuring a three-pane layout and Markdown support.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
