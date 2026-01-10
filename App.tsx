@@ -32,7 +32,8 @@ import {
   Music,
   Film,
   File,
-  Download
+  Download,
+  Globe
 } from 'lucide-react';
 import { Note, Folder, ViewMode, AppSettings, Attachment } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS, APP_ID } from './constants';
@@ -42,7 +43,6 @@ const App: React.FC = () => {
   const [notes, setNotes] = useState<Note[]>(() => {
     const saved = localStorage.getItem(`${APP_ID}-notes`);
     const parsed = saved ? JSON.parse(saved) : INITIAL_NOTES;
-    // Migrate old notes if attachments field is missing
     return parsed.map((n: any) => ({ ...n, attachments: n.attachments || [] }));
   });
   const [folders, setFolders] = useState<Folder[]>(() => {
@@ -60,9 +60,12 @@ const App: React.FC = () => {
   const [newTagValue, setNewTagValue] = useState('');
   const tagInputRef = useRef<HTMLInputElement>(null);
   
-  const [isAddingUrl, setIsAddingUrl] = useState(false);
+  // URL Modal states
+  const [showUrlModal, setShowUrlModal] = useState(false);
   const [newUrlValue, setNewUrlValue] = useState('');
+  const [lastSelectionStart, setLastSelectionStart] = useState<number>(0);
   const urlInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -122,13 +125,18 @@ const App: React.FC = () => {
   useEffect(() => {
     setIsPreviewMode(false);
     setIsAddingTag(false);
-    setIsAddingUrl(false);
+    setShowUrlModal(false);
     setNewTagValue('');
     setNewUrlValue('');
   }, [activeNoteId]);
 
   useEffect(() => { if (isAddingTag && tagInputRef.current) tagInputRef.current.focus(); }, [isAddingTag]);
-  useEffect(() => { if (isAddingUrl && urlInputRef.current) urlInputRef.current.focus(); }, [isAddingUrl]);
+  
+  useEffect(() => { 
+    if (showUrlModal && urlInputRef.current) {
+      urlInputRef.current.focus();
+    }
+  }, [showUrlModal]);
 
   // --- Handlers ---
   const createNewNote = useCallback(() => {
@@ -144,11 +152,12 @@ const App: React.FC = () => {
       isMarkdown: settings.defaultMarkdown,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      readTime: 0
+      readTime: 0,
+      folderId: currentView.mode === ViewMode.Folder ? currentView.id : undefined
     };
     setNotes(prev => [newNote, ...prev]);
     setActiveNoteId(newNote.id);
-  }, [settings.defaultMarkdown]);
+  }, [settings.defaultMarkdown, currentView]);
 
   const updateActiveNote = useCallback((updates: Partial<Note>) => {
     if (!activeNoteId) return;
@@ -163,21 +172,42 @@ const App: React.FC = () => {
     setIsAddingTag(false);
   };
 
+  const handleOpenUrlModal = () => {
+    // Capture cursor position before opening modal
+    if (textareaRef.current) {
+      setLastSelectionStart(textareaRef.current.selectionStart);
+    }
+    setShowUrlModal(true);
+  };
+
   const handleAddUrl = () => {
     if (!activeNote || !newUrlValue.trim()) {
-      setIsAddingUrl(false);
+      setShowUrlModal(false);
       return;
     }
     const url = newUrlValue.trim();
+    const domain = new URL(url.startsWith('http') ? url : `https://${url}`).hostname.replace('www.', '');
+    const name = domain || 'Linked Resource';
+    
     const newAttachment: Attachment = {
       id: `att-${Date.now()}`,
-      name: url.split('/').pop() || 'Linked Resource',
+      name: name,
       type: 'url',
-      url: url
+      url: url.startsWith('http') ? url : `https://${url}`
     };
-    updateActiveNote({ attachments: [...activeNote.attachments, newAttachment] });
+
+    // Insert markdown link at captured cursor position
+    const linkText = ` [${name}](${newAttachment.url}) `;
+    const content = activeNote.content;
+    const newContent = content.substring(0, lastSelectionStart) + linkText + content.substring(lastSelectionStart);
+
+    updateActiveNote({ 
+      attachments: [...activeNote.attachments, newAttachment],
+      content: newContent
+    });
+    
     setNewUrlValue('');
-    setIsAddingUrl(false);
+    setShowUrlModal(false);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -200,7 +230,7 @@ const App: React.FC = () => {
       updateActiveNote({ attachments: [...activeNote.attachments, newAttachment] });
     };
     reader.readAsDataURL(file);
-    e.target.value = ''; // Reset input
+    e.target.value = ''; 
   };
 
   const removeAttachment = (id: string) => {
@@ -219,7 +249,52 @@ const App: React.FC = () => {
   const editorWidthClass = { narrow: 'max-w-2xl', standard: 'max-w-4xl', full: 'max-w-full' }[settings.editorWidth];
 
   return (
-    <div className="flex h-screen w-full bg-white dark:bg-zinc-950 overflow-hidden">
+    <div className="flex h-screen w-full bg-white dark:bg-zinc-950 overflow-hidden relative">
+      {/* URL Input Modal */}
+      {showUrlModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-md p-6 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <Globe size={20} className="text-zinc-500" />
+                Insert Web Link
+              </h3>
+              <button onClick={() => setShowUrlModal(false)} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full text-zinc-400">
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-zinc-500 mb-6">Enter the URL below. It will be added to your attachments and inserted into your text.</p>
+            <div className="relative mb-6">
+              <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+              <input 
+                ref={urlInputRef}
+                type="text" 
+                placeholder="https://example.com"
+                value={newUrlValue}
+                onChange={(e) => setNewUrlValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddUrl()}
+                className="w-full pl-10 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-zinc-500 outline-none transition-all text-sm"
+              />
+            </div>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setShowUrlModal(false)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleAddUrl}
+                disabled={!newUrlValue.trim()}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-all"
+              >
+                Insert Link
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Primary Sidebar */}
       <aside className={`${isSidebarCollapsed ? 'w-16' : 'w-64'} hidden md:flex flex-col border-r border-zinc-200 dark:border-zinc-800 transition-all duration-300`}>
         <div className="p-4 flex items-center justify-between">
@@ -314,11 +389,7 @@ const App: React.FC = () => {
                         <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg transition-colors"><Paperclip size={14}/> Attach File</button>
                         <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept="audio/*,video/*,application/pdf,application/msword,text/plain" />
                         
-                        {isAddingUrl ? (
-                          <input ref={urlInputRef} type="text" value={newUrlValue} onChange={(e) => setNewUrlValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddUrl()} onBlur={handleAddUrl} placeholder="Paste URL..." className="px-3 py-1 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 text-xs rounded-lg outline-none w-40" />
-                        ) : (
-                          <button onClick={() => setIsAddingUrl(true)} className="flex items-center gap-2 px-3 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg transition-colors"><LinkIcon size={14}/> Add Link</button>
-                        )}
+                        <button onClick={handleOpenUrlModal} className="flex items-center gap-2 px-3 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg transition-colors"><LinkIcon size={14}/> Add Link</button>
                       </div>
                     </div>
 
@@ -330,7 +401,14 @@ const App: React.FC = () => {
                           ))}
                         </div>
                       )}
-                      <textarea value={activeNote.content} onChange={(e) => updateActiveNote({ content: e.target.value })} placeholder="Write something brilliant..." className={`w-full min-h-[50vh] bg-transparent border-none outline-none resize-none leading-relaxed ${activeNote.isMarkdown ? 'mono' : ''} ${fontSizeClass}`} />
+                      <textarea 
+                        ref={textareaRef}
+                        value={activeNote.content} 
+                        onChange={(e) => updateActiveNote({ content: e.target.value })} 
+                        onBlur={(e) => setLastSelectionStart(e.target.selectionStart)}
+                        placeholder="Write something brilliant..." 
+                        className={`w-full min-h-[50vh] bg-transparent border-none outline-none resize-none leading-relaxed ${activeNote.isMarkdown ? 'mono' : ''} ${fontSizeClass}`} 
+                      />
                     </div>
                   </>
                 ) : (
@@ -466,7 +544,7 @@ const MarkdownPreview: React.FC<{ content: string }> = ({ content }) => {
         if (line.startsWith('- ') || line.startsWith('* ')) return <li key={idx} className="ml-4 list-disc">{line.slice(2)}</li>;
         if (line.match(/^\d+\. /)) return <li key={idx} className="ml-4 list-decimal">{line.replace(/^\d+\. /, '')}</li>;
         if (line.trim() === '---') return <hr key={idx} className="border-zinc-200 dark:border-zinc-800 my-8" />;
-        const formattedLine = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/`(.*?)`/g, '<code class="bg-zinc-100 dark:bg-zinc-800 px-1 rounded text-sm mono">$1</code>');
+        const formattedLine = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/`(.*?)`/g, '<code class="bg-zinc-100 dark:bg-zinc-800 px-1 rounded text-sm mono">$1</code>').replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank" class="text-blue-500 hover:underline">$1</a>');
         return <p key={idx} className="leading-relaxed" dangerouslySetInnerHTML={{ __html: formattedLine || '&nbsp;' }} />;
       })}
     </div>
