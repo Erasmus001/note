@@ -19,7 +19,6 @@ export const INITIAL_NOTES: Note[] = [
     isPinned: true,
     isStarred: true,
     isTrashed: false,
-    isMarkdown: true,
     createdAt: Date.now() - 86400000,
     updatedAt: Date.now() - 3600000,
     readTime: 2
@@ -34,7 +33,6 @@ export const INITIAL_NOTES: Note[] = [
     isPinned: false,
     isStarred: true,
     isTrashed: false,
-    isMarkdown: false,
     createdAt: Date.now() - 172800000,
     updatedAt: Date.now() - 86400000,
     readTime: 5
@@ -49,7 +47,6 @@ export const INITIAL_NOTES: Note[] = [
     isPinned: true,
     isStarred: false,
     isTrashed: false,
-    isMarkdown: false,
     createdAt: Date.now() - 259200000,
     updatedAt: Date.now() - 129600000,
     readTime: 3

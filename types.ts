@@ -4,7 +4,7 @@ export type NoteId = string;
 export interface Attachment {
   id: string;
   name: string;
-  type: 'audio' | 'video' | 'document' | 'url';
+  type: 'audio' | 'video' | 'image' | 'document' | 'url';
   url: string;
   size?: number;
 }
@@ -19,7 +19,6 @@ export interface Note {
   isPinned: boolean;
   isStarred: boolean;
   isTrashed: boolean;
-  isMarkdown: boolean;
   createdAt: number;
   updatedAt: number;
   readTime: number;
@@ -43,5 +42,4 @@ export interface AppSettings {
   theme: 'light' | 'dark';
   fontSize: 'sm' | 'base' | 'lg';
   editorWidth: 'narrow' | 'standard' | 'full';
-  defaultMarkdown: boolean;
 }
