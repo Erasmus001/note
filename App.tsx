@@ -200,7 +200,6 @@ const App: React.FC = () => {
       url: finalUrl
     };
 
-    // Use a short ID reference in the editor instead of the full URL or encoding
     const referenceText = `\n[Link: ${name}](${newAttachment.id})\n`;
     const content = activeNote.content;
     const pos = lastSelectionStart;
@@ -215,42 +214,69 @@ const App: React.FC = () => {
     setShowUrlModal(false);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeNote) return;
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Explicitly type files as File[] to prevent 'unknown' type errors for file properties
+    const files = Array.from(e.target.files || []) as File[];
+    if (files.length === 0 || !activeNoteId) return;
 
-    if (textareaRef.current) {
-      setLastSelectionStart(textareaRef.current.selectionStart);
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      const type: Attachment['type'] = file.type.startsWith('audio/') ? 'audio' : 
-                                     file.type.startsWith('video/') ? 'video' : 'document';
+    // Capture position at the moment of interaction
+    const initialPos = textareaRef.current ? textareaRef.current.selectionStart : 0;
+    
+    try {
+      setSaveStatus('saving');
       
-      const newAttachment: Attachment = {
-        id: `att-${Date.now()}`,
-        name: file.name,
-        type: type,
-        url: base64,
-        size: file.size
-      };
+      const fileProcessingPromises = files.map((file: File) => {
+        return new Promise<{ attachment: Attachment, insertText: string }>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const base64 = event.target?.result as string;
+            const type: Attachment['type'] = 
+              file.type.startsWith('audio/') ? 'audio' : 
+              file.type.startsWith('video/') ? 'video' : 'document';
+            
+            const id = `att-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+            const newAttachment: Attachment = {
+              id,
+              name: file.name,
+              type,
+              url: base64,
+              size: file.size
+            };
 
-      // CRITICAL: Insert a CLEAN REFERENCE instead of the base64 string
-      const insertText = `\n[File: ${file.name}](${newAttachment.id})\n`;
-      
-      const content = activeNote.content;
-      const pos = lastSelectionStart;
-      const newContent = content.substring(0, pos) + insertText + content.substring(pos);
-
-      updateActiveNote({ 
-        attachments: [...activeNote.attachments, newAttachment],
-        content: newContent
+            const insertText = `\n[File: ${file.name}](${id})\n`;
+            resolve({ attachment: newAttachment, insertText });
+          };
+          reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`));
+          reader.readAsDataURL(file);
+        });
       });
-    };
-    reader.readAsDataURL(file);
-    e.target.value = ''; 
+
+      const results = await Promise.all(fileProcessingPromises);
+      const newAttachments = results.map(r => r.attachment);
+      const combinedInsertText = results.map(r => r.insertText).join("");
+
+      setNotes(prev => prev.map(n => {
+        if (n.id === activeNoteId) {
+          const content = n.content;
+          // Use current content in case it changed during upload
+          const newContent = content.substring(0, initialPos) + combinedInsertText + content.substring(initialPos);
+          return {
+            ...n,
+            attachments: [...n.attachments, ...newAttachments],
+            content: newContent,
+            updatedAt: Date.now()
+          };
+        }
+        return n;
+      }));
+      
+      setSaveStatus('saved');
+    } catch (error) {
+      console.error("File upload error:", error);
+      setSaveStatus('idle');
+    } finally {
+      e.target.value = ''; // Reset input
+    }
   };
 
   const removeAttachment = (id: string) => {
@@ -304,7 +330,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Sidebar logic remains same */}
+      {/* Sidebar */}
       <aside className={`${isSidebarCollapsed ? 'w-16' : 'w-64'} hidden md:flex flex-col border-r border-zinc-200 dark:border-zinc-800 transition-all duration-300`}>
         <div className="p-4 flex items-center justify-between">
           {!isSidebarCollapsed && (
@@ -385,7 +411,7 @@ const App: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-3 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg"><Paperclip size={14}/> Add Media</button>
-                        <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} accept="audio/*,video/*,image/*,application/pdf,application/msword,text/plain" />
+                        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUpload} accept="audio/*,video/*,image/*,application/pdf,application/msword,text/plain" />
                         <button onClick={handleOpenUrlModal} className="flex items-center gap-2 px-3 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg"><LinkIcon size={14}/> Add Link</button>
                       </div>
                     </div>
@@ -466,7 +492,7 @@ const MarkdownPreview: React.FC<{ content: string; attachments: Attachment[] }> 
               return (
                 <div key={idx} className="my-6 p-4 bg-zinc-50 dark:bg-zinc-900/50 rounded-2xl border border-zinc-100 dark:border-zinc-800">
                   <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3"><Music size={14}/> {name}</div>
-                  <audio controls className="w-full h-8" src={attachment.url} />
+                  <audio controls className="w-full" src={attachment.url} />
                 </div>
               );
             }
