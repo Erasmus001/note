@@ -281,11 +281,12 @@ const App: React.FC = () => {
           const id = `att-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
           resolve({ id, name: file.name, type, url: base64, size: file.size });
         };
+        reader.onerror = () => resolve({ id: `err-${Date.now()}`, name: file.name, type: 'document', url: '' });
         reader.readAsDataURL(file);
       });
     }));
 
-    const validAttachments = results.filter((r): r is Attachment => r !== null);
+    const validAttachments = results.filter((r): r is Attachment => r !== null && !r.id.startsWith('err'));
     
     if (validAttachments.length > 0) {
       setNotes(prev => prev.map(n => n.id === activeNoteId ? {
@@ -978,13 +979,20 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
     onUpdate(newBlocks.map(b => b.content).join(''));
     isDraggingRef.current = false;
   };
+  
+  const handleDragEnd = () => {
+    isDraggingRef.current = false;
+  };
 
   // Handle File Drop on Editor
   const handleEditorDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     
-    if (isDraggingRef.current) return; // Ignore internal reorder drops here
+    if (isDraggingRef.current) {
+        isDraggingRef.current = false;
+        return; 
+    }
 
     const files = Array.from(e.dataTransfer.files) as File[];
     if (files.length > 0) {
@@ -1021,6 +1029,13 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
     onUpdate(newBlocks.map(b => b.content).join(''));
   };
   
+  const removeBlock = (index: number) => {
+      const newBlocks = [...blocks];
+      newBlocks.splice(index, 1);
+      setBlocks(newBlocks);
+      onUpdate(newBlocks.map(b => b.content).join(''));
+  };
+  
   // Expose insertion methods
   useImperativeHandle(ref, () => ({
     insertContent: (text: string) => {
@@ -1054,12 +1069,25 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
               draggable={!disabled}
               onDragStart={(e) => handleDragStart(e, index)}
               onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
               onDrop={(e) => handleDrop(e, index)}
               className="group relative my-2 pl-6 pr-2 py-1 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-900/40 border border-transparent hover:border-zinc-200 dark:hover:border-zinc-800 transition-all cursor-grab active:cursor-grabbing"
             >
                <div className="absolute left-1 top-1/2 -translate-y-1/2 text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity">
                  <GripVertical size={16} />
                </div>
+               
+               <button 
+                  onClick={(e) => {
+                      e.stopPropagation(); 
+                      removeBlock(index);
+                  }}
+                  className="absolute right-2 top-2 p-1.5 bg-white/80 dark:bg-black/50 hover:bg-red-100 dark:hover:bg-red-900/50 text-zinc-400 hover:text-red-500 rounded-lg opacity-0 group-hover:opacity-100 transition-all z-10"
+                  title="Remove attachment"
+               >
+                  <X size={14} />
+               </button>
+
                {att ? (
                  <div className="">
                     <AttachmentRenderer attachment={att} onImageClick={onImageClick} />
