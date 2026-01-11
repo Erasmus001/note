@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useImperativeHandle, forwardRef } from 'react';
 import { 
   FileText, 
   Star, 
@@ -9,7 +8,6 @@ import {
   Plus, 
   Tag, 
   Pin, 
-  Layout, 
   Sun, 
   Moon, 
   Info, 
@@ -27,19 +25,25 @@ import {
   Globe, 
   FileIcon, 
   ImageIcon, 
-  AlertCircle,
   Maximize2,
   RefreshCw,
   AlertTriangle,
-  FolderPlus,
   Folder as FolderIcon,
   Type,
   Monitor,
   Database,
-  ShieldCheck
+  ShieldCheck,
+  Hash,
+  Pencil,
+  GripVertical
 } from 'lucide-react';
 import { Note, Folder, ViewMode, AppSettings, Attachment } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS, APP_ID } from './constants';
+
+// --- Helper Types for Block Editor ---
+type Block = 
+  | { id: string; type: 'text'; content: string }
+  | { id: string; type: 'attachment'; content: string; attachmentId: string };
 
 const App: React.FC = () => {
   // --- State ---
@@ -75,7 +79,7 @@ const App: React.FC = () => {
   
   // Settings Modal states
   const [showSettings, setShowSettings] = useState(false);
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'appearance' | 'editor' | 'data'>('appearance');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'appearance' | 'editor' | 'tags' | 'data'>('appearance');
 
   // Folder Modal states
   const [showFolderModal, setShowFolderModal] = useState(false);
@@ -85,8 +89,10 @@ const App: React.FC = () => {
   const tagInputRef = useRef<HTMLInputElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Ref for the BlockEditor to allow external insertion
+  const blockEditorRef = useRef<{ insertContent: (text: string) => void, insertFiles: (files: File[]) => void }>(null);
 
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
@@ -125,11 +131,21 @@ const App: React.FC = () => {
 
   const activeNote = useMemo(() => notes.find(n => n.id === activeNoteId) || null, [notes, activeNoteId]);
 
-  const allTags = useMemo(() => {
-    const tags = new Set<string>();
-    notes.forEach(n => n.tags.forEach(t => tags.add(t)));
-    return Array.from(tags).sort();
+  const tagUsage = useMemo(() => {
+    const counts: Record<string, number> = {};
+    notes.forEach(n => {
+      if (!n.isTrashed) {
+        n.tags.forEach(t => {
+          counts[t] = (counts[t] || 0) + 1;
+        });
+      }
+    });
+    return counts;
   }, [notes]);
+
+  const allTags = useMemo(() => {
+    return Object.keys(tagUsage).sort((a, b) => tagUsage[b] - tagUsage[a]);
+  }, [tagUsage]);
 
   // --- Effects ---
   useEffect(() => {
@@ -224,57 +240,72 @@ const App: React.FC = () => {
     setIsAddingTag(false);
   }, [newTagValue, activeNote, updateActiveNote]);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []) as File[];
-    if (files.length === 0 || !activeNoteId || activeNote?.isTrashed) return;
+  // Global Tag Management
+  const renameGlobalTag = (oldTag: string) => {
+    const newTag = prompt(`Rename tag "${oldTag}" to:`, oldTag);
+    if (newTag && newTag.trim() && newTag.trim() !== oldTag) {
+      const cleanNewTag = newTag.trim().toLowerCase();
+      setNotes(prev => prev.map(n => ({
+        ...n,
+        tags: n.tags.map(t => t === oldTag ? cleanNewTag : t).filter((t, i, self) => self.indexOf(t) === i)
+      })));
+    }
+  };
 
-    const MAX_FILE_SIZE = 2.5 * 1024 * 1024;
-    const initialPos = textareaRef.current ? textareaRef.current.selectionStart : 0;
+  const deleteGlobalTag = (tagToDelete: string) => {
+    if (confirm(`Remove tag "${tagToDelete}" from all notes?`)) {
+      setNotes(prev => prev.map(n => ({
+        ...n,
+        tags: n.tags.filter(t => t !== tagToDelete)
+      })));
+    }
+  };
+
+  // Process files and add them to the active note's attachments, returning the new attachment objects
+  const processFiles = async (files: File[]): Promise<Attachment[]> => {
+     const MAX_FILE_SIZE = 2.5 * 1024 * 1024;
+     const results = await Promise.all(files.map(file => {
+      if (file.size > MAX_FILE_SIZE) {
+        alert(`File "${file.name}" exceeds the 2.5MB limit.`);
+        return null;
+      }
+      return new Promise<Attachment>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const base64 = event.target?.result as string;
+          let type: Attachment['type'] = 'document';
+          if (file.type.startsWith('audio/')) type = 'audio';
+          else if (file.type.startsWith('video/')) type = 'video';
+          else if (file.type.startsWith('image/')) type = 'image';
+          
+          const id = `att-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+          resolve({ id, name: file.name, type, url: base64, size: file.size });
+        };
+        reader.readAsDataURL(file);
+      });
+    }));
+
+    const validAttachments = results.filter((r): r is Attachment => r !== null);
     
-    try {
-      setSaveStatus('saving');
-      const results = await Promise.all(files.map(file => {
-        if (file.size > MAX_FILE_SIZE) {
-          alert(`File "${file.name}" exceeds the 2.5MB limit.`);
-          return null;
-        }
-        return new Promise<{ attachment: Attachment, insertText: string }>((resolve) => {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            const base64 = event.target?.result as string;
-            let type: Attachment['type'] = 'document';
-            if (file.type.startsWith('audio/')) type = 'audio';
-            else if (file.type.startsWith('video/')) type = 'video';
-            else if (file.type.startsWith('image/')) type = 'image';
-            
-            const id = `att-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-            resolve({
-              attachment: { id, name: file.name, type, url: base64, size: file.size },
-              insertText: `\n[File: ${file.name}](${id})\n`
-            });
-          };
-          reader.readAsDataURL(file);
-        });
-      }));
-
-      const validResults = results.filter((r): r is { attachment: Attachment, insertText: string } => r !== null);
-      if (validResults.length === 0) return;
-
-      const newAttachments = validResults.map(r => r.attachment);
-      const combinedInsertText = validResults.map(r => r.insertText).join("");
-
+    if (validAttachments.length > 0) {
       setNotes(prev => prev.map(n => n.id === activeNoteId ? {
         ...n,
-        attachments: [...n.attachments, ...newAttachments],
-        content: n.content.substring(0, initialPos) + combinedInsertText + n.content.substring(initialPos),
+        attachments: [...n.attachments, ...validAttachments],
         updatedAt: Date.now()
       } : n));
-      setSaveStatus('saved');
-    } catch (error) {
-      setSaveStatus('error');
-    } finally {
-      e.target.value = '';
     }
+    return validAttachments;
+  };
+
+  const handleFileUploadInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []) as File[];
+    if (files.length === 0 || !activeNoteId || activeNote?.isTrashed) return;
+    
+    // Delegate to BlockEditor via ref
+    if (blockEditorRef.current) {
+      blockEditorRef.current.insertFiles(files);
+    }
+    e.target.value = '';
   };
 
   const handleAddUrl = () => {
@@ -283,12 +314,15 @@ const App: React.FC = () => {
     const id = `att-${Date.now()}`;
     const attachment: Attachment = { id, name: 'Web Link', type: 'url', url };
     const reference = `\n[Link: ${url}](${id})\n`;
-    const pos = textareaRef.current ? textareaRef.current.selectionStart : activeNote.content.length;
     
-    updateActiveNote({
-      attachments: [...activeNote.attachments, attachment],
-      content: activeNote.content.substring(0, pos) + reference + activeNote.content.substring(pos)
-    });
+    // Update attachments state
+    updateActiveNote({ attachments: [...activeNote.attachments, attachment] });
+    
+    // Insert text into editor
+    if (blockEditorRef.current) {
+      blockEditorRef.current.insertContent(reference);
+    }
+
     setNewUrlValue('');
     setShowUrlModal(false);
   };
@@ -327,18 +361,21 @@ const App: React.FC = () => {
       {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl h-[500px] flex overflow-hidden rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl h-[550px] flex overflow-hidden rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-200">
             {/* Settings Sidebar */}
             <div className="w-48 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4 shrink-0">
               <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-6 ml-2">Settings</h2>
               <nav className="space-y-1">
-                <button onClick={() => setActiveSettingsTab('appearance')} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeSettingsTab === 'appearance' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
+                <button onClick={() => setActiveSettingsTab('appearance')} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeSettingsTab === 'appearance' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
                   <Monitor size={16}/> Appearance
                 </button>
-                <button onClick={() => setActiveSettingsTab('editor')} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeSettingsTab === 'editor' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
+                <button onClick={() => setActiveSettingsTab('editor')} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeSettingsTab === 'editor' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
                   <Type size={16}/> Editor
                 </button>
-                <button onClick={() => setActiveSettingsTab('data')} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeSettingsTab === 'data' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
+                <button onClick={() => setActiveSettingsTab('tags')} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeSettingsTab === 'tags' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
+                  <Tag size={16}/> Tag Manager
+                </button>
+                <button onClick={() => setActiveSettingsTab('data')} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeSettingsTab === 'data' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
                   <Database size={16}/> Data & Safety
                 </button>
               </nav>
@@ -347,7 +384,7 @@ const App: React.FC = () => {
             {/* Settings Content */}
             <div className="flex-1 flex flex-col min-w-0">
               <div className="flex items-center justify-between p-6 border-b border-zinc-100 dark:border-zinc-800">
-                <h3 className="font-bold capitalize">{activeSettingsTab} Settings</h3>
+                <h3 className="font-bold capitalize">{activeSettingsTab === 'tags' ? 'Tag Manager' : `${activeSettingsTab} Settings`}</h3>
                 <button onClick={() => setShowSettings(false)} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full text-zinc-400 transition-colors"><X size={20}/></button>
               </div>
               <div className="flex-1 overflow-y-auto p-8">
@@ -404,6 +441,46 @@ const App: React.FC = () => {
                           </button>
                         ))}
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeSettingsTab === 'tags' && (
+                  <div className="space-y-4 animate-in fade-in slide-in-from-bottom-1 duration-200">
+                    <p className="text-xs text-zinc-500 mb-6 leading-relaxed">Manage tags globally. Renaming a tag updates it across all notes in your workspace.</p>
+                    <div className="space-y-2.5">
+                      {allTags.length > 0 ? allTags.map(tag => (
+                        <div key={tag} className="flex items-center justify-between p-3.5 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl border border-zinc-100 dark:border-zinc-800/60 group hover:border-zinc-200 dark:hover:border-zinc-700 transition-all">
+                          <div className="flex items-center gap-3.5">
+                            <div className="p-2 bg-white dark:bg-zinc-800 rounded-xl text-zinc-400 shadow-sm"><Hash size={16}/></div>
+                            <div>
+                              <div className="text-sm font-bold tracking-tight">{tag}</div>
+                              <div className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider">{tagUsage[tag]} {tagUsage[tag] === 1 ? 'note' : 'notes'}</div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 md:opacity-0 group-hover:opacity-100 transition-all">
+                            <button 
+                              onClick={() => renameGlobalTag(tag)}
+                              className="p-2.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-xl text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-all"
+                              title="Rename Tag"
+                            >
+                              <Pencil size={15}/>
+                            </button>
+                            <button 
+                              onClick={() => deleteGlobalTag(tag)}
+                              className="p-2.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl text-zinc-400 hover:text-red-500 transition-all"
+                              title="Delete Tag Everywhere"
+                            >
+                              <Trash2 size={15}/>
+                            </button>
+                          </div>
+                        </div>
+                      )) : (
+                        <div className="text-center py-16 text-zinc-400">
+                          <div className="p-5 bg-zinc-50 dark:bg-zinc-900/50 rounded-full inline-block mb-4"><Tag size={40} strokeWidth={1} className="opacity-20" /></div>
+                          <p className="text-sm font-medium">No tags found in your library.</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -537,9 +614,27 @@ const App: React.FC = () => {
                 </button>
               </div>
               {folders.map(f => (<SidebarNavItem key={f.id} icon={<span>{f.icon}</span>} label={f.name} active={currentView.mode === ViewMode.Folder && currentView.id === f.id} onClick={() => { setCurrentView({ mode: ViewMode.Folder, id: f.id }); setShowSettings(false); }} />))}
-              <div className="pt-6 pb-2 px-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Tags</div>
+              
+              <div className="pt-6 pb-2 px-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest flex items-center justify-between">
+                <span>Tags</span>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setShowSettings(true); setActiveSettingsTab('tags'); }} 
+                  className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                  title="Manage Tags"
+                >
+                  <SettingsIcon size={14} />
+                </button>
+              </div>
               <div className="px-2 space-y-1">
-                {allTags.map(tag => (<SidebarNavItem key={tag} icon={<Tag size={14} />} label={tag} active={currentView.mode === ViewMode.Tag && currentView.id === tag} onClick={() => { setCurrentView({ mode: ViewMode.Tag, id: tag }); setShowSettings(false); }} />))}
+                {allTags.map(tag => (
+                  <SidebarNavItem 
+                    key={tag} 
+                    icon={<Tag size={14} />} 
+                    label={`${tag} (${tagUsage[tag]})`} 
+                    active={currentView.mode === ViewMode.Tag && currentView.id === tag} 
+                    onClick={() => { setCurrentView({ mode: ViewMode.Tag, id: tag }); setShowSettings(false); }} 
+                  />
+                ))}
               </div>
             </>
           )}
@@ -553,7 +648,7 @@ const App: React.FC = () => {
             {settings.theme === 'light' ? <Moon size={20}/> : <Sun size={20}/>}
           </button>
           <button 
-            onClick={() => setShowSettings(true)}
+            onClick={() => { setShowSettings(true); setActiveSettingsTab('appearance'); }}
             className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors"
             title="Open Settings"
           >
@@ -657,7 +752,7 @@ const App: React.FC = () => {
                         >
                           <Paperclip size={14}/> Add File
                         </button>
-                        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUpload} />
+                        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUploadInput} />
                         <button 
                           onClick={() => !activeNote.isTrashed && setShowUrlModal(true)} 
                           disabled={activeNote.isTrashed}
@@ -667,14 +762,18 @@ const App: React.FC = () => {
                         </button>
                       </div>
                     </div>
-                    <textarea 
-                      ref={textareaRef}
-                      value={activeNote.content} 
-                      onChange={(e) => updateActiveNote({ content: e.target.value })} 
+                    
+                    <BlockEditor 
+                      ref={blockEditorRef}
+                      content={activeNote.content}
+                      attachments={activeNote.attachments}
+                      onUpdate={(newContent) => updateActiveNote({ content: newContent })}
+                      onUpload={processFiles}
+                      onImageClick={(att) => setSelectedPreviewImage(att)}
+                      fontSizeClass={fontSizeClass}
                       disabled={activeNote.isTrashed}
-                      placeholder="Start capturing your thoughts..." 
-                      className={`w-full min-h-[60vh] bg-transparent border-none outline-none resize-none leading-relaxed text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-200 dark:placeholder:text-zinc-800 ${fontSizeClass} disabled:opacity-50`} 
                     />
+
                   </>
                 ) : (
                   <NoteReadingView 
@@ -705,7 +804,7 @@ const App: React.FC = () => {
 // --- Sub-components ---
 
 const SidebarNavItem: React.FC<{ icon: React.ReactNode; label: string; active?: boolean; collapsed?: boolean; onClick: () => void; }> = ({ icon, label, active, collapsed, onClick }) => (
-  <button onClick={onClick} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${active ? 'bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-bold' : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-900/50'}`}>
+  <button onClick={onClick} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${active ? 'bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-bold shadow-sm' : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-900/50'}`}>
     <span className="shrink-0">{icon}</span>{!collapsed && <span className="truncate">{label}</span>}
   </button>
 );
@@ -729,7 +828,7 @@ const NoteListItem: React.FC<{ note: Note; active: boolean; onClick: () => void;
  * Visual renderer for attachments.
  */
 const AttachmentRenderer: React.FC<{ attachment: Attachment; onImageClick?: (att: Attachment) => void }> = ({ attachment, onImageClick }) => {
-  const cardClasses = "my-6 p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl group transition-all duration-300";
+  const cardClasses = "my-4 p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl group transition-all duration-300";
 
   switch (attachment.type) {
     case 'audio':
@@ -791,8 +890,212 @@ const AttachmentRenderer: React.FC<{ attachment: Attachment; onImageClick?: (att
 };
 
 /**
- * Clean Reading View component (formerly MarkdownPreview).
+ * Custom Block Editor
+ * Replaces standard textarea to allow drag-and-drop of attachment blocks
  */
+interface BlockEditorProps {
+  content: string;
+  attachments: Attachment[];
+  onUpdate: (content: string) => void;
+  onUpload: (files: File[]) => Promise<Attachment[]>;
+  onImageClick: (att: Attachment) => void;
+  fontSizeClass: string;
+  disabled: boolean;
+}
+
+const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles: (f: File[]) => void }, BlockEditorProps>(({ content, attachments, onUpdate, onUpload, onImageClick, fontSizeClass, disabled }, ref) => {
+  const [blocks, setBlocks] = useState<Block[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
+
+  // Parse content into blocks
+  const parseContent = useCallback((text: string) => {
+    // Regex matches [File: name](att-id)
+    const regex = /(\[(?:File|Link): .*?\]\(att-.*?\))/g;
+    const parts = text.split(regex);
+    const newBlocks: Block[] = [];
+    
+    parts.forEach((part, index) => {
+      if (!part) return; // Skip empty matches
+      
+      const match = part.match(/^\[(?:File|Link): (.*?)\]\((att-.*?)\)$/);
+      if (match) {
+        newBlocks.push({
+          id: `block-${index}-${match[2]}`,
+          type: 'attachment',
+          content: part,
+          attachmentId: match[2]
+        });
+      } else {
+        newBlocks.push({
+          id: `block-${index}-text`,
+          type: 'text',
+          content: part
+        });
+      }
+    });
+    
+    // Ensure we have at least one text block if empty
+    if (newBlocks.length === 0) {
+      newBlocks.push({ id: 'block-init', type: 'text', content: '' });
+    }
+    
+    return newBlocks;
+  }, []);
+
+  // Sync blocks with content prop, but ONLY if content changed externally to avoid focus loss
+  useEffect(() => {
+    const currentSerialized = blocks.map(b => b.content).join('');
+    if (content !== currentSerialized) {
+      setBlocks(parseContent(content));
+    }
+  }, [content, parseContent]);
+
+  // Handle reordering
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.setData('text/plain', index.toString());
+    e.dataTransfer.effectAllowed = 'move';
+    isDraggingRef.current = true;
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent, toIndex: number) => {
+    e.preventDefault();
+    if (!isDraggingRef.current) return;
+    
+    const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+    if (isNaN(fromIndex) || fromIndex === toIndex) return;
+
+    const newBlocks = [...blocks];
+    const [movedBlock] = newBlocks.splice(fromIndex, 1);
+    newBlocks.splice(toIndex, 0, movedBlock);
+
+    setBlocks(newBlocks);
+    onUpdate(newBlocks.map(b => b.content).join(''));
+    isDraggingRef.current = false;
+  };
+
+  // Handle File Drop on Editor
+  const handleEditorDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (isDraggingRef.current) return; // Ignore internal reorder drops here
+
+    const files = Array.from(e.dataTransfer.files) as File[];
+    if (files.length > 0) {
+       await insertFiles(files);
+    }
+  };
+
+  const insertFiles = async (files: File[]) => {
+      if (disabled) return;
+      
+      const newAttachments = await onUpload(files);
+      if (newAttachments.length === 0) return;
+
+      const attachmentBlocks: Block[] = newAttachments.map((att, i) => ({
+        id: `block-new-att-${Date.now()}-${i}`,
+        type: 'attachment',
+        content: `\n[File: ${att.name}](${att.id})\n`,
+        attachmentId: att.id
+      }));
+
+      // Append to end for simplicity in this version
+      const newBlocks = [...blocks, ...attachmentBlocks];
+      // Add a newline block after if needed
+      newBlocks.push({ id: `block-pad-${Date.now()}`, type: 'text', content: '\n' });
+
+      setBlocks(newBlocks);
+      onUpdate(newBlocks.map(b => b.content).join(''));
+  };
+
+  const updateBlockContent = (index: number, newText: string) => {
+    const newBlocks = [...blocks];
+    newBlocks[index] = { ...newBlocks[index], content: newText };
+    setBlocks(newBlocks);
+    onUpdate(newBlocks.map(b => b.content).join(''));
+  };
+  
+  // Expose insertion methods
+  useImperativeHandle(ref, () => ({
+    insertContent: (text: string) => {
+      const newBlocks = [...blocks];
+      // Append for simplicity
+      newBlocks.push({ id: `block-insert-${Date.now()}`, type: 'text', content: text });
+      setBlocks(newBlocks);
+      onUpdate(newBlocks.map(b => b.content).join(''));
+    },
+    insertFiles
+  }));
+
+  const autoResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    e.target.style.height = 'auto';
+    e.target.style.height = e.target.scrollHeight + 'px';
+  };
+
+  return (
+    <div 
+      ref={containerRef}
+      className={`w-full min-h-[60vh] pb-32 outline-none ${disabled ? 'opacity-50' : ''}`}
+      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onDrop={handleEditorDrop}
+    >
+      {blocks.map((block, index) => {
+        if (block.type === 'attachment') {
+          const att = attachments.find(a => a.id === block.attachmentId);
+          return (
+            <div 
+              key={block.id}
+              draggable={!disabled}
+              onDragStart={(e) => handleDragStart(e, index)}
+              onDragOver={handleDragOver}
+              onDrop={(e) => handleDrop(e, index)}
+              className="group relative my-2 pl-6 pr-2 py-1 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-900/40 border border-transparent hover:border-zinc-200 dark:hover:border-zinc-800 transition-all cursor-grab active:cursor-grabbing"
+            >
+               <div className="absolute left-1 top-1/2 -translate-y-1/2 text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity">
+                 <GripVertical size={16} />
+               </div>
+               {att ? (
+                 <div className="">
+                    <AttachmentRenderer attachment={att} onImageClick={onImageClick} />
+                 </div>
+               ) : (
+                 <div className="p-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 text-xs rounded-lg">Missing Attachment: {block.attachmentId}</div>
+               )}
+            </div>
+          );
+        } else {
+          return (
+            <textarea
+              key={block.id}
+              value={block.content}
+              onChange={(e) => {
+                updateBlockContent(index, e.target.value);
+                autoResize(e);
+              }}
+              disabled={disabled}
+              placeholder={index === 0 && blocks.length === 1 ? "Start capturing your thoughts..." : undefined}
+              className={`w-full bg-transparent border-none outline-none resize-none leading-relaxed text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-200 dark:placeholder:text-zinc-800 ${fontSizeClass} overflow-hidden`}
+              style={{ minHeight: '1.5em' }}
+              onFocus={(e) => autoResize(e as any)}
+            />
+          );
+        }
+      })}
+      
+      {/* Visual cue for drop zone */}
+      <div className="mt-8 p-8 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-2xl text-center text-zinc-300 dark:text-zinc-700 text-sm pointer-events-none">
+        Drag and drop files here to upload
+      </div>
+    </div>
+  );
+});
+
 const NoteReadingView: React.FC<{ title: string; content: string; attachments: Attachment[]; onImageClick: (att: Attachment) => void }> = ({ title, content, attachments, onImageClick }) => {
   const lines = content.split('\n');
   
