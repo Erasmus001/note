@@ -4,7 +4,7 @@ import {
   FileText, 
   Star, 
   Trash2, 
-  Settings, 
+  Settings as SettingsIcon, 
   Search, 
   Plus, 
   Tag, 
@@ -28,7 +28,15 @@ import {
   FileIcon, 
   ImageIcon, 
   AlertCircle,
-  Maximize2
+  Maximize2,
+  RefreshCw,
+  AlertTriangle,
+  FolderPlus,
+  Folder as FolderIcon,
+  Type,
+  Monitor,
+  Database,
+  ShieldCheck
 } from 'lucide-react';
 import { Note, Folder, ViewMode, AppSettings, Attachment } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS, APP_ID } from './constants';
@@ -44,7 +52,7 @@ const App: React.FC = () => {
       return INITIAL_NOTES;
     }
   });
-  const [folders] = useState<Folder[]>(() => {
+  const [folders, setFolders] = useState<Folder[]>(() => {
     try {
       const saved = localStorage.getItem(`${APP_ID}-folders`);
       return saved ? JSON.parse(saved) : INITIAL_FOLDERS;
@@ -64,10 +72,19 @@ const App: React.FC = () => {
   const [newTagValue, setNewTagValue] = useState('');
   const [showUrlModal, setShowUrlModal] = useState(false);
   const [newUrlValue, setNewUrlValue] = useState('');
-  const [lastSelectionStart, setLastSelectionStart] = useState<number>(0);
+  
+  // Settings Modal states
+  const [showSettings, setShowSettings] = useState(false);
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'appearance' | 'editor' | 'data'>('appearance');
+
+  // Folder Modal states
+  const [showFolderModal, setShowFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderIcon, setNewFolderIcon] = useState('📁');
 
   const tagInputRef = useRef<HTMLInputElement>(null);
   const urlInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -75,12 +92,12 @@ const App: React.FC = () => {
     try {
       const saved = localStorage.getItem(`${APP_ID}-settings`);
       return saved ? JSON.parse(saved) : {
-        theme: 'light',
+        theme: 'dark',
         fontSize: 'base',
         editorWidth: 'standard'
       };
     } catch (e) {
-      return { theme: 'light', fontSize: 'base', editorWidth: 'standard' };
+      return { theme: 'dark', fontSize: 'base', editorWidth: 'standard' };
     }
   });
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -128,19 +145,31 @@ const App: React.FC = () => {
 
   useEffect(() => {
     try {
+      localStorage.setItem(`${APP_ID}-folders`, JSON.stringify(folders));
+    } catch (e) {}
+  }, [folders]);
+
+  useEffect(() => {
+    try {
       localStorage.setItem(`${APP_ID}-settings`, JSON.stringify(settings));
     } catch (e) {}
-    document.documentElement.classList.toggle('dark', settings.theme === 'dark');
+    if (settings.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
   }, [settings]);
 
   useEffect(() => {
     setIsPreviewMode(false);
     setIsAddingTag(false);
     setShowUrlModal(false);
+    setShowFolderModal(false);
   }, [activeNoteId]);
 
   useEffect(() => { if (isAddingTag && tagInputRef.current) tagInputRef.current.focus(); }, [isAddingTag]);
   useEffect(() => { if (showUrlModal && urlInputRef.current) urlInputRef.current.focus(); }, [showUrlModal]);
+  useEffect(() => { if (showFolderModal && folderInputRef.current) folderInputRef.current.focus(); }, [showFolderModal]);
 
   // --- Handlers ---
   const createNewNote = useCallback(() => {
@@ -160,16 +189,32 @@ const App: React.FC = () => {
     };
     setNotes(prev => [newNote, ...prev]);
     setActiveNoteId(newNote.id);
+    if (currentView.mode !== ViewMode.Folder) {
+      setCurrentView({ mode: ViewMode.All });
+    }
   }, [currentView]);
 
-  const updateActiveNote = useCallback((updates: Partial<Note>) => {
-    if (!activeNoteId) return;
-    setNotes(prev => prev.map(n => n.id === activeNoteId ? { ...n, ...updates, updatedAt: Date.now() } : n));
-  }, [activeNoteId]);
+  const handleSaveFolder = useCallback(() => {
+    if (newFolderName.trim()) {
+      const newFolder: Folder = {
+        id: `f-${Date.now()}`,
+        name: newFolderName.trim(),
+        icon: newFolderIcon || '📁'
+      };
+      setFolders(prev => [...prev, newFolder]);
+      setCurrentView({ mode: ViewMode.Folder, id: newFolder.id });
+      setNewFolderName('');
+      setShowFolderModal(false);
+    }
+  }, [newFolderName, newFolderIcon]);
 
-  // Added handleAddTag handler to fix missing function error
+  const updateActiveNote = useCallback((updates: Partial<Note>) => {
+    if (!activeNoteId || activeNote?.isTrashed) return;
+    setNotes(prev => prev.map(n => n.id === activeNoteId ? { ...n, ...updates, updatedAt: Date.now() } : n));
+  }, [activeNoteId, activeNote?.isTrashed]);
+
   const handleAddTag = useCallback(() => {
-    if (newTagValue.trim() && activeNote) {
+    if (newTagValue.trim() && activeNote && !activeNote.isTrashed) {
       const tag = newTagValue.trim().toLowerCase();
       if (!activeNote.tags.includes(tag)) {
         updateActiveNote({ tags: [...activeNote.tags, tag] });
@@ -181,17 +226,16 @@ const App: React.FC = () => {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []) as File[];
-    if (files.length === 0 || !activeNoteId) return;
+    if (files.length === 0 || !activeNoteId || activeNote?.isTrashed) return;
 
-    // Safety check for localStorage quota
-    const MAX_FILE_SIZE = 2.5 * 1024 * 1024; // 2.5MB
+    const MAX_FILE_SIZE = 2.5 * 1024 * 1024;
     const initialPos = textareaRef.current ? textareaRef.current.selectionStart : 0;
     
     try {
       setSaveStatus('saving');
       const results = await Promise.all(files.map(file => {
         if (file.size > MAX_FILE_SIZE) {
-          alert(`File "${file.name}" exceeds the 2.5MB limit for local storage. Skipping.`);
+          alert(`File "${file.name}" exceeds the 2.5MB limit.`);
           return null;
         }
         return new Promise<{ attachment: Attachment, insertText: string }>((resolve) => {
@@ -234,7 +278,7 @@ const App: React.FC = () => {
   };
 
   const handleAddUrl = () => {
-    if (!activeNote || !newUrlValue.trim()) return;
+    if (!activeNote || !newUrlValue.trim() || activeNote.isTrashed) return;
     const url = newUrlValue.trim().startsWith('http') ? newUrlValue.trim() : `https://${newUrlValue.trim()}`;
     const id = `att-${Date.now()}`;
     const attachment: Attachment = { id, name: 'Web Link', type: 'url', url };
@@ -251,16 +295,145 @@ const App: React.FC = () => {
 
   const toggleStar = (id: string) => setNotes(prev => prev.map(n => n.id === id ? { ...n, isStarred: !n.isStarred } : n));
   const togglePin = (id: string) => setNotes(prev => prev.map(n => n.id === id ? { ...n, isPinned: !n.isPinned } : n));
+  
   const moveToTrash = (id: string) => {
-    setNotes(prev => prev.map(n => n.id === id ? { ...n, isTrashed: !n.isTrashed } : n));
+    setNotes(prev => prev.map(n => n.id === id ? { ...n, isTrashed: true, isPinned: false } : n));
     if (activeNoteId === id) setActiveNoteId(null);
+  };
+
+  const restoreNote = (id: string) => {
+    setNotes(prev => prev.map(n => n.id === id ? { ...n, isTrashed: false } : n));
+  };
+
+  const deletePermanently = (id: string) => {
+    if (!confirm('Are you sure you want to delete this note permanently? This action cannot be undone.')) return;
+    setNotes(prev => prev.filter(n => n.id !== id));
+    setActiveNoteId(null);
+  };
+
+  const clearAllData = () => {
+    if (confirm('DANGER: This will permanently delete ALL notes and folders. Are you absolutely sure?')) {
+      localStorage.clear();
+      window.location.reload();
+    }
   };
 
   const fontSizeClass = { sm: 'text-sm', base: 'text-base', lg: 'text-lg' }[settings.fontSize];
   const editorWidthClass = { narrow: 'max-w-2xl', standard: 'max-w-4xl', full: 'max-w-full' }[settings.editorWidth];
 
   return (
-    <div className="flex h-screen w-full bg-white dark:bg-zinc-950 overflow-hidden relative">
+    <div className="flex h-screen w-full bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-200 overflow-hidden relative">
+      
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl h-[500px] flex overflow-hidden rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-200">
+            {/* Settings Sidebar */}
+            <div className="w-48 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4 shrink-0">
+              <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-6 ml-2">Settings</h2>
+              <nav className="space-y-1">
+                <button onClick={() => setActiveSettingsTab('appearance')} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeSettingsTab === 'appearance' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
+                  <Monitor size={16}/> Appearance
+                </button>
+                <button onClick={() => setActiveSettingsTab('editor')} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeSettingsTab === 'editor' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
+                  <Type size={16}/> Editor
+                </button>
+                <button onClick={() => setActiveSettingsTab('data')} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeSettingsTab === 'data' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
+                  <Database size={16}/> Data & Safety
+                </button>
+              </nav>
+            </div>
+
+            {/* Settings Content */}
+            <div className="flex-1 flex flex-col min-w-0">
+              <div className="flex items-center justify-between p-6 border-b border-zinc-100 dark:border-zinc-800">
+                <h3 className="font-bold capitalize">{activeSettingsTab} Settings</h3>
+                <button onClick={() => setShowSettings(false)} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full text-zinc-400 transition-colors"><X size={20}/></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-8">
+                {activeSettingsTab === 'appearance' && (
+                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-1 duration-200">
+                    <div>
+                      <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-4">Theme Mode</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button 
+                          onClick={() => setSettings(s => ({...s, theme: 'light'}))}
+                          className={`flex flex-col items-center gap-3 p-4 rounded-xl border-2 transition-all ${settings.theme === 'light' ? 'border-zinc-900 dark:border-white bg-zinc-50 dark:bg-zinc-800' : 'border-zinc-100 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'}`}
+                        >
+                          <Sun size={24} className={settings.theme === 'light' ? 'text-amber-500' : 'text-zinc-400'} />
+                          <span className="text-xs font-bold">Light Mode</span>
+                        </button>
+                        <button 
+                          onClick={() => setSettings(s => ({...s, theme: 'dark'}))}
+                          className={`flex flex-col items-center gap-3 p-4 rounded-xl border-2 transition-all ${settings.theme === 'dark' ? 'border-zinc-900 dark:border-white bg-zinc-50 dark:bg-zinc-800' : 'border-zinc-100 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'}`}
+                        >
+                          <Moon size={24} className={settings.theme === 'dark' ? 'text-blue-400' : 'text-zinc-400'} />
+                          <span className="text-xs font-bold">Dark Mode</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeSettingsTab === 'editor' && (
+                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-1 duration-200">
+                    <div>
+                      <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-4">Font Size</h4>
+                      <div className="flex p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
+                        {(['sm', 'base', 'lg'] as const).map(size => (
+                          <button 
+                            key={size}
+                            onClick={() => setSettings(s => ({...s, fontSize: size}))}
+                            className={`flex-1 py-2 text-xs font-bold capitalize rounded-lg transition-all ${settings.fontSize === size ? 'bg-white dark:bg-zinc-700 shadow-sm text-zinc-900 dark:text-white' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+                          >
+                            {size === 'sm' ? 'Small' : size === 'base' ? 'Default' : 'Large'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-4">Editor Max Width</h4>
+                      <div className="flex p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
+                        {(['narrow', 'standard', 'full'] as const).map(width => (
+                          <button 
+                            key={width}
+                            onClick={() => setSettings(s => ({...s, editorWidth: width}))}
+                            className={`flex-1 py-2 text-xs font-bold capitalize rounded-lg transition-all ${settings.editorWidth === width ? 'bg-white dark:bg-zinc-700 shadow-sm text-zinc-900 dark:text-white' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+                          >
+                            {width}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeSettingsTab === 'data' && (
+                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-1 duration-200">
+                    <div className="p-4 bg-zinc-50 dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                      <div className="flex items-center gap-3 mb-2">
+                        <ShieldCheck size={20} className="text-green-500" />
+                        <h4 className="text-sm font-bold">Local Encryption</h4>
+                      </div>
+                      <p className="text-xs text-zinc-500 leading-relaxed">Your data is stored exclusively in your browser's local storage. We never upload your personal notes to our servers.</p>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-red-500 uppercase tracking-widest mb-4">Danger Zone</h4>
+                      <button 
+                        onClick={clearAllData}
+                        className="w-full py-3 bg-red-50 dark:bg-red-900/10 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 rounded-xl text-sm font-bold hover:bg-red-100 dark:hover:bg-red-900/20 transition-all flex items-center justify-center gap-2"
+                      >
+                        <Trash2 size={16}/> Clear All Database
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Image Preview Modal */}
       {selectedPreviewImage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200" onClick={() => setSelectedPreviewImage(null)}>
@@ -273,6 +446,46 @@ const App: React.FC = () => {
             className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-in zoom-in-95 duration-200" 
             onClick={(e) => e.stopPropagation()}
           />
+        </div>
+      )}
+
+      {/* Folder Creation Modal */}
+      {showFolderModal && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/20 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-md p-6 rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold flex items-center gap-2"><FolderIcon size={18} /> Create New Folder</h3>
+              <button onClick={() => setShowFolderModal(false)} className="text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"><X size={20}/></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">Folder Name</label>
+                <input 
+                  ref={folderInputRef}
+                  type="text" 
+                  placeholder="e.g. Daily Thoughts" 
+                  value={newFolderName} 
+                  onChange={e => setNewFolderName(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSaveFolder()}
+                  className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none text-sm transition-all focus:border-zinc-400"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1.5 ml-1">Icon (Emoji)</label>
+                <input 
+                  type="text" 
+                  placeholder="📁" 
+                  value={newFolderIcon} 
+                  onChange={e => setNewFolderIcon(e.target.value)}
+                  className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl outline-none text-sm transition-all focus:border-zinc-400"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-8">
+              <button onClick={() => setShowFolderModal(false)} className="flex-1 px-4 py-2.5 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm font-semibold hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">Cancel</button>
+              <button onClick={handleSaveFolder} disabled={!newFolderName.trim()} className="flex-1 px-4 py-2.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity">Create Folder</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -302,41 +515,62 @@ const App: React.FC = () => {
       )}
 
       {/* Sidebar */}
-      <aside className={`${isSidebarCollapsed ? 'w-16' : 'w-64'} hidden md:flex flex-col border-r border-zinc-200 dark:border-zinc-800 transition-all duration-300`}>
+      <aside className={`${isSidebarCollapsed ? 'w-16' : 'w-64'} hidden md:flex flex-col border-r border-zinc-200 dark:border-zinc-800 transition-all duration-300 shrink-0 bg-white dark:bg-zinc-950`}>
         <div className="p-4 flex items-center justify-between shrink-0">
           {!isSidebarCollapsed && <div className="font-bold text-xl tracking-tighter">Super Notes</div>}
           <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-zinc-500"><Menu size={18} /></button>
         </div>
         <nav className="flex-1 overflow-y-auto px-2 space-y-1">
-          <SidebarNavItem icon={<FileText size={18} />} label="All Notes" active={currentView.mode === ViewMode.All} collapsed={isSidebarCollapsed} onClick={() => setCurrentView({ mode: ViewMode.All })} />
-          <SidebarNavItem icon={<Star size={18} />} label="Starred" active={currentView.mode === ViewMode.Starred} collapsed={isSidebarCollapsed} onClick={() => setCurrentView({ mode: ViewMode.Starred })} />
-          <SidebarNavItem icon={<Trash2 size={18} />} label="Trash" active={currentView.mode === ViewMode.Trash} collapsed={isSidebarCollapsed} onClick={() => setCurrentView({ mode: ViewMode.Trash })} />
+          <SidebarNavItem icon={<FileText size={18} />} label="All Notes" active={currentView.mode === ViewMode.All} collapsed={isSidebarCollapsed} onClick={() => { setCurrentView({ mode: ViewMode.All }); setShowSettings(false); }} />
+          <SidebarNavItem icon={<Star size={18} />} label="Starred" active={currentView.mode === ViewMode.Starred} collapsed={isSidebarCollapsed} onClick={() => { setCurrentView({ mode: ViewMode.Starred }); setShowSettings(false); }} />
+          <SidebarNavItem icon={<Trash2 size={18} />} label="Trash" active={currentView.mode === ViewMode.Trash} collapsed={isSidebarCollapsed} onClick={() => { setCurrentView({ mode: ViewMode.Trash }); setShowSettings(false); }} />
           {!isSidebarCollapsed && (
             <>
-              <div className="pt-6 pb-2 px-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Folders</div>
-              {folders.map(f => (<SidebarNavItem key={f.id} icon={<span>{f.icon}</span>} label={f.name} active={currentView.mode === ViewMode.Folder && currentView.id === f.id} onClick={() => setCurrentView({ mode: ViewMode.Folder, id: f.id })} />))}
+              <div className="pt-6 pb-2 px-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest flex items-center justify-between group">
+                <span>Folders</span>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setShowFolderModal(true); }} 
+                  className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                  title="Create New Folder"
+                >
+                  <Plus size={14} />
+                </button>
+              </div>
+              {folders.map(f => (<SidebarNavItem key={f.id} icon={<span>{f.icon}</span>} label={f.name} active={currentView.mode === ViewMode.Folder && currentView.id === f.id} onClick={() => { setCurrentView({ mode: ViewMode.Folder, id: f.id }); setShowSettings(false); }} />))}
               <div className="pt-6 pb-2 px-4 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Tags</div>
               <div className="px-2 space-y-1">
-                {allTags.map(tag => (<SidebarNavItem key={tag} icon={<Tag size={14} />} label={tag} active={currentView.mode === ViewMode.Tag && currentView.id === tag} onClick={() => setCurrentView({ mode: ViewMode.Tag, id: tag })} />))}
+                {allTags.map(tag => (<SidebarNavItem key={tag} icon={<Tag size={14} />} label={tag} active={currentView.mode === ViewMode.Tag && currentView.id === tag} onClick={() => { setCurrentView({ mode: ViewMode.Tag, id: tag }); setShowSettings(false); }} />))}
               </div>
             </>
           )}
         </nav>
         <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
-          <button onClick={() => setSettings(s => ({ ...s, theme: s.theme === 'light' ? 'dark' : 'light' }))} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500">{settings.theme === 'light' ? <Moon size={20}/> : <Sun size={20}/>}</button>
-          <button className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500"><Settings size={20}/></button>
+          <button 
+            onClick={() => setSettings(s => ({ ...s, theme: s.theme === 'light' ? 'dark' : 'light' }))} 
+            className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors"
+            title="Toggle Theme"
+          >
+            {settings.theme === 'light' ? <Moon size={20}/> : <Sun size={20}/>}
+          </button>
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors"
+            title="Open Settings"
+          >
+            <SettingsIcon size={20}/>
+          </button>
         </div>
       </aside>
 
       {/* Explorer */}
-      <aside className="w-full md:w-80 flex flex-col border-r border-zinc-200 dark:border-zinc-800">
+      <aside className="w-full md:w-80 flex flex-col border-r border-zinc-200 dark:border-zinc-800 shrink-0 bg-white dark:bg-zinc-950">
         <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
-          <h2 className="font-semibold capitalize text-sm">{currentView.mode}</h2>
+          <h2 className="font-semibold capitalize text-sm">{currentView.mode === ViewMode.Folder ? folders.find(f => f.id === currentView.id)?.name : currentView.mode}</h2>
           <button onClick={createNewNote} className="p-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:opacity-90 transition-opacity"><Plus size={18} /></button>
         </div>
         <div className="p-4"><div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} /><input type="text" placeholder="Filter notes..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-zinc-100 dark:bg-zinc-900 border-none rounded-lg outline-none text-xs" /></div></div>
         <div className="flex-1 overflow-y-auto">
-          {filteredNotes.length > 0 ? filteredNotes.map(note => (<NoteListItem key={note.id} note={note} active={activeNoteId === note.id} onClick={() => setActiveNoteId(note.id)} />)) : (<div className="flex flex-col items-center justify-center h-48 text-zinc-400"><Info size={24} className="mb-2" /><p className="text-xs">No notes found</p></div>)}
+          {filteredNotes.length > 0 ? filteredNotes.map(note => (<NoteListItem key={note.id} note={note} active={activeNoteId === note.id} onClick={() => { setActiveNoteId(note.id); setShowSettings(false); }} />)) : (<div className="flex flex-col items-center justify-center h-48 text-zinc-400"><Info size={24} className="mb-2" /><p className="text-xs">No notes found</p></div>)}
         </div>
       </aside>
 
@@ -344,6 +578,22 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-950">
         {activeNote ? (
           <>
+            {activeNote.isTrashed && (
+              <div className="bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-6 py-3 flex items-center justify-between shrink-0 animate-in slide-in-from-top duration-300">
+                <div className="flex items-center gap-3 text-zinc-500 text-sm">
+                  <AlertTriangle className="text-amber-500" size={18} />
+                  <span>This note is in the trash.</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => restoreNote(activeNote.id)} className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-zinc-800 text-xs font-bold rounded-lg border border-zinc-200 dark:border-zinc-700 hover:shadow-sm transition-all text-green-600 dark:text-green-400">
+                    <RefreshCw size={14} /> Restore Note
+                  </button>
+                  <button onClick={() => deletePermanently(activeNote.id)} className="flex items-center gap-2 px-3 py-1.5 bg-red-50 dark:bg-red-900/20 text-xs font-bold rounded-lg border border-red-200 dark:border-red-900/50 hover:bg-red-100 transition-all text-red-600">
+                    <Trash2 size={14} /> Delete Forever
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 shrink-0">
                <div className="flex items-center gap-4 text-xs font-medium text-zinc-400">
                 <div className="flex items-center gap-1"><span>{activeNote.folderId ? folders.find(f => f.id === activeNote.folderId)?.name : 'Drafts'}</span></div>
@@ -352,14 +602,20 @@ const App: React.FC = () => {
                 {saveStatus === 'error' && <div className="text-red-500 flex items-center gap-1 font-bold">Storage Full!</div>}
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => toggleStar(activeNote.id)} className={`p-2 rounded-lg transition-colors ${activeNote.isStarred ? 'text-yellow-500' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}><Star size={18} fill={activeNote.isStarred ? 'currentColor' : 'none'} /></button>
-                <button onClick={() => togglePin(activeNote.id)} className={`p-2 rounded-lg transition-colors ${activeNote.isPinned ? 'text-blue-500' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}><Pin size={18} fill={activeNote.isPinned ? 'currentColor' : 'none'} /></button>
-                <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-800 mx-1"></div>
+                {!activeNote.isTrashed && (
+                  <>
+                    <button onClick={() => toggleStar(activeNote.id)} className={`p-2 rounded-lg transition-colors ${activeNote.isStarred ? 'text-yellow-500' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}><Star size={18} fill={activeNote.isStarred ? 'currentColor' : 'none'} /></button>
+                    <button onClick={() => togglePin(activeNote.id)} className={`p-2 rounded-lg transition-colors ${activeNote.isPinned ? 'text-blue-500' : 'text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}><Pin size={18} fill={activeNote.isPinned ? 'currentColor' : 'none'} /></button>
+                    <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-800 mx-1"></div>
+                  </>
+                )}
                 <button onClick={() => setIsPreviewMode(!isPreviewMode)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${isPreviewMode ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>
                   {isPreviewMode ? <Edit3 size={14} /> : <Eye size={14} />}
                   {isPreviewMode ? 'Edit' : 'Read Mode'}
                 </button>
-                <button onClick={() => moveToTrash(activeNote.id)} className="p-2 hover:text-red-500 text-zinc-400"><Trash2 size={18} /></button>
+                {!activeNote.isTrashed && (
+                  <button onClick={() => moveToTrash(activeNote.id)} className="p-2 hover:text-red-500 text-zinc-400 transition-colors"><Trash2 size={18} /></button>
+                )}
               </div>
             </div>
 
@@ -367,26 +623,57 @@ const App: React.FC = () => {
               <div className={`mx-auto ${editorWidthClass} space-y-8 pb-32`}>
                 {!isPreviewMode ? (
                   <>
-                    <input type="text" value={activeNote.title} onChange={(e) => updateActiveNote({ title: e.target.value })} placeholder="Note Title..." className="w-full text-4xl md:text-5xl font-extrabold bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-200 dark:placeholder:text-zinc-800" />
+                    <input 
+                      type="text" 
+                      value={activeNote.title} 
+                      onChange={(e) => updateActiveNote({ title: e.target.value })} 
+                      disabled={activeNote.isTrashed}
+                      placeholder="Note Title..." 
+                      className="w-full text-4xl md:text-5xl font-extrabold bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-200 dark:placeholder:text-zinc-800 disabled:opacity-50" 
+                    />
                     <div className="flex flex-wrap gap-4 items-center">
                       <div className="flex flex-wrap gap-2 items-center border-r border-zinc-200 dark:border-zinc-800 pr-4">
                         {activeNote.tags.map(t => (
-                          <span key={t} className="px-2 py-0.5 bg-zinc-100 dark:bg-zinc-900 text-zinc-500 text-[10px] font-bold rounded-full flex items-center gap-1 group/tag">#{t}<button onClick={() => updateActiveNote({ tags: activeNote.tags.filter(tag => tag !== t) })} className="hover:text-red-500 transition-colors opacity-0 group-hover/tag:opacity-100"><X size={10} /></button></span>
+                          <span key={t} className="px-2 py-0.5 bg-zinc-100 dark:bg-zinc-900 text-zinc-500 text-[10px] font-bold rounded-full flex items-center gap-1 group/tag">
+                            #{t}
+                            {!activeNote.isTrashed && (
+                              <button onClick={() => updateActiveNote({ tags: activeNote.tags.filter(tag => tag !== t) })} className="hover:text-red-500 transition-colors opacity-0 group-hover/tag:opacity-100"><X size={10} /></button>
+                            )}
+                          </span>
                         ))}
-                        {isAddingTag ? (<input ref={tagInputRef} type="text" value={newTagValue} onChange={e => setNewTagValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddTag()} onBlur={handleAddTag} placeholder="..." className="px-2 bg-transparent border-b border-zinc-300 dark:border-zinc-700 outline-none w-16 text-[10px]" />) : (<button onClick={() => setIsAddingTag(true)} className="px-2 py-0.5 border border-dashed border-zinc-200 dark:border-zinc-800 text-zinc-400 text-[10px] rounded-full hover:border-zinc-400 transition-colors"><Plus size={10} /> Tag</button>)}
+                        {!activeNote.isTrashed && (
+                          isAddingTag ? (
+                            <input ref={tagInputRef} type="text" value={newTagValue} onChange={e => setNewTagValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAddTag()} onBlur={handleAddTag} placeholder="..." className="px-2 bg-transparent border-b border-zinc-300 dark:border-zinc-700 outline-none w-16 text-[10px]" />
+                          ) : (
+                            <button onClick={() => setIsAddingTag(true)} className="px-2 py-0.5 border border-dashed border-zinc-200 dark:border-zinc-800 text-zinc-400 text-[10px] rounded-full hover:border-zinc-400 transition-colors"><Plus size={10} /> Tag</button>
+                          )
+                        )}
                       </div>
                       <div className="flex items-center gap-4">
-                        <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"><Paperclip size={14}/> Add File</button>
+                        <button 
+                          onClick={() => !activeNote.isTrashed && fileInputRef.current?.click()} 
+                          disabled={activeNote.isTrashed}
+                          className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <Paperclip size={14}/> Add File
+                        </button>
                         <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileUpload} />
-                        <button onClick={() => setShowUrlModal(true)} className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"><LinkIcon size={14}/> Web Link</button>
+                        <button 
+                          onClick={() => !activeNote.isTrashed && setShowUrlModal(true)} 
+                          disabled={activeNote.isTrashed}
+                          className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <LinkIcon size={14}/> Web Link
+                        </button>
                       </div>
                     </div>
                     <textarea 
                       ref={textareaRef}
                       value={activeNote.content} 
                       onChange={(e) => updateActiveNote({ content: e.target.value })} 
+                      disabled={activeNote.isTrashed}
                       placeholder="Start capturing your thoughts..." 
-                      className={`w-full min-h-[60vh] bg-transparent border-none outline-none resize-none leading-relaxed text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-200 dark:placeholder:text-zinc-800 ${fontSizeClass}`} 
+                      className={`w-full min-h-[60vh] bg-transparent border-none outline-none resize-none leading-relaxed text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-200 dark:placeholder:text-zinc-800 ${fontSizeClass} disabled:opacity-50`} 
                     />
                   </>
                 ) : (
@@ -426,7 +713,7 @@ const SidebarNavItem: React.FC<{ icon: React.ReactNode; label: string; active?: 
 const NoteListItem: React.FC<{ note: Note; active: boolean; onClick: () => void; }> = ({ note, active, onClick }) => (
   <div onClick={onClick} className={`group p-4 border-b border-zinc-100 dark:border-zinc-900 cursor-pointer transition-colors relative ${active ? 'bg-zinc-50 dark:bg-zinc-900' : 'hover:bg-zinc-50/50 dark:hover:bg-zinc-900/50'}`}>
     <div className="flex items-start justify-between mb-1">
-      <h3 className={`font-bold text-sm truncate pr-4 ${active ? 'text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'}`}>{note.title || 'Untitled'}</h3>
+      <h3 className={`font-bold text-sm truncate pr-4 ${active ? 'text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'} ${note.isTrashed ? 'italic opacity-60' : ''}`}>{note.title || 'Untitled'}</h3>
       {note.isPinned && <Pin size={12} className="text-blue-500 shrink-0" fill="currentColor" />}
     </div>
     <p className="text-[11px] text-zinc-500 line-clamp-2 leading-relaxed opacity-80 h-8 overflow-hidden">{note.content.substring(0, 100).trim() || 'No preview content available.'}</p>
@@ -516,7 +803,6 @@ const NoteReadingView: React.FC<{ title: string; content: string; attachments: A
         {lines.map((line, idx) => {
           if (!line.trim()) return <div key={idx} className="h-4" />;
 
-          // Detect attachment markers: [File: name](att-id)
           const attachmentMatch = line.match(/^\[(File|Link): (.*?)\]\((att-.*?)\)$/);
           if (attachmentMatch) {
             const attId = attachmentMatch[3];
@@ -526,7 +812,6 @@ const NoteReadingView: React.FC<{ title: string; content: string; attachments: A
             }
           }
 
-          // Simple non-markdown rendering
           return <p key={idx} className="leading-relaxed text-zinc-700 dark:text-zinc-300 text-lg">{line}</p>;
         })}
       </div>
