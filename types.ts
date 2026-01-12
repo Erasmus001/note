@@ -7,6 +7,7 @@ export interface Attachment {
   type: 'audio' | 'video' | 'image' | 'document' | 'url';
   url: string;
   size?: number;
+  width?: number;
 }
 
 export interface Note {

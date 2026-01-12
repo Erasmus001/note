@@ -39,7 +39,8 @@ import {
   Cloud,
   Check,
   Upload,
-  HardDrive
+  HardDrive,
+  MoveDiagonal
 } from 'lucide-react';
 import { Note, Folder, ViewMode, AppSettings, Attachment } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS, APP_ID } from './constants';
@@ -192,28 +193,39 @@ const App: React.FC = () => {
   }, [currentView]);
 
   // --- Effects ---
+  const firstRender = useRef(true);
+  
+  // Debounced Saving to prevent flickering and rapid writes
   useEffect(() => {
-    setSaveStatus('saving');
-    try {
-      localStorage.setItem(`${APP_ID}-notes`, JSON.stringify(notes));
-      const timer = setTimeout(() => {
-        setSaveStatus('saved');
-        
-        // Trigger Cloud Sync if connected
-        if (isCloudConnected) {
-          setCloudStatus('syncing');
-          setTimeout(() => {
-            setCloudStatus('synced');
-            const now = Date.now();
-            setLastCloudSync(now);
-            localStorage.setItem(`${APP_ID}-last-sync`, now.toString());
-          }, 1500); // Simulate network delay
-        }
-      }, 600);
-      return () => clearTimeout(timer);
-    } catch (e) {
-      setSaveStatus('error');
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
     }
+
+    const timeoutId = setTimeout(() => {
+      setSaveStatus('saving');
+      try {
+        localStorage.setItem(`${APP_ID}-notes`, JSON.stringify(notes));
+        setTimeout(() => {
+          setSaveStatus('saved');
+          
+          // Trigger Cloud Sync if connected
+          if (isCloudConnected) {
+            setCloudStatus('syncing');
+            setTimeout(() => {
+              setCloudStatus('synced');
+              const now = Date.now();
+              setLastCloudSync(now);
+              localStorage.setItem(`${APP_ID}-last-sync`, now.toString());
+            }, 1500); // Simulate network delay
+          }
+        }, 300);
+      } catch (e) {
+        setSaveStatus('error');
+      }
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
   }, [notes, isCloudConnected]);
 
   useEffect(() => {
@@ -297,6 +309,20 @@ const App: React.FC = () => {
   const updateActiveNote = useCallback((updates: Partial<Note>) => {
     if (!activeNoteId || activeNote?.isTrashed) return;
     setNotes(prev => prev.map(n => n.id === activeNoteId ? { ...n, ...updates, updatedAt: Date.now() } : n));
+  }, [activeNoteId, activeNote?.isTrashed]);
+
+  const handleAttachmentResize = useCallback((attachmentId: string, newWidth: number) => {
+    if (!activeNoteId || activeNote?.isTrashed) return;
+    setNotes(prev => prev.map(n => {
+      if (n.id === activeNoteId) {
+         return {
+           ...n,
+           attachments: n.attachments.map(a => a.id === attachmentId ? { ...a, width: newWidth } : a),
+           updatedAt: Date.now()
+         };
+      }
+      return n;
+    }));
   }, [activeNoteId, activeNote?.isTrashed]);
 
   const handleAddTag = useCallback(() => {
@@ -678,7 +704,8 @@ const App: React.FC = () => {
                     </div>
                   </div>
                 )}
-
+                
+                {/* Data Settings */}
                 {activeSettingsTab === 'data' && (
                   <div className="space-y-8 animate-in fade-in slide-in-from-bottom-1 duration-200">
                     <div className="p-4 bg-zinc-50 dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
@@ -975,6 +1002,7 @@ const App: React.FC = () => {
                       onUpdate={(newContent) => updateActiveNote({ content: newContent })}
                       onUpload={processFiles}
                       onImageClick={(att) => setSelectedPreviewImage(att)}
+                      onAttachmentResize={handleAttachmentResize}
                       fontSizeClass={fontSizeClass}
                       disabled={activeNote.isTrashed}
                     />
@@ -1008,13 +1036,13 @@ const App: React.FC = () => {
 
 // --- Sub-components ---
 
-const SidebarNavItem: React.FC<{ icon: React.ReactNode; label: string; active?: boolean; collapsed?: boolean; onClick: () => void; }> = ({ icon, label, active, collapsed, onClick }) => (
+const SidebarNavItem: React.FC<{ icon: React.ReactNode; label: string; active?: boolean; collapsed?: boolean; onClick: () => void; }> = React.memo(({ icon, label, active, collapsed, onClick }) => (
   <button onClick={onClick} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${active ? 'bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-bold shadow-sm' : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-900/50'}`}>
     <span className="shrink-0">{icon}</span>{!collapsed && <span className="truncate">{label}</span>}
   </button>
-);
+));
 
-const NoteListItem: React.FC<{ note: Note; active: boolean; onClick: () => void; }> = ({ note, active, onClick }) => (
+const NoteListItem: React.FC<{ note: Note; active: boolean; onClick: () => void; }> = React.memo(({ note, active, onClick }) => (
   <div onClick={onClick} className={`group p-4 border-b border-zinc-100 dark:border-zinc-900 cursor-pointer transition-colors relative ${active ? 'bg-zinc-50 dark:bg-zinc-900' : 'hover:bg-zinc-50/50 dark:hover:bg-zinc-900/50'}`}>
     <div className="flex items-start justify-between mb-1">
       <h3 className={`font-bold text-sm truncate pr-4 ${active ? 'text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300'} ${note.isTrashed ? 'italic opacity-60' : ''}`}>{note.title || 'Untitled'}</h3>
@@ -1027,13 +1055,50 @@ const NoteListItem: React.FC<{ note: Note; active: boolean; onClick: () => void;
     </div>
     {active && <div className="absolute left-0 top-0 bottom-0 w-1 bg-zinc-900 dark:bg-zinc-100" />}
   </div>
-);
+));
 
 /**
  * Visual renderer for attachments.
  */
-const AttachmentRenderer: React.FC<{ attachment: Attachment; onImageClick?: (att: Attachment) => void }> = ({ attachment, onImageClick }) => {
+const AttachmentRenderer: React.FC<{ 
+  attachment: Attachment; 
+  onImageClick?: (att: Attachment) => void;
+  onResize?: (width: number) => void; 
+  readOnly?: boolean;
+}> = ({ attachment, onImageClick, onResize, readOnly }) => {
   const cardClasses = "my-4 p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl group transition-all duration-300";
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [localWidth, setLocalWidth] = useState(attachment.width || 0);
+
+  useEffect(() => {
+    setLocalWidth(attachment.width || 0);
+  }, [attachment.width]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = imgRef.current?.offsetWidth || 0;
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const currentWidth = startWidth + (moveEvent.clientX - startX);
+      if (currentWidth > 150) { // Min width 150px
+        setLocalWidth(currentWidth);
+      }
+    };
+    
+    const handleMouseUp = (upEvent: MouseEvent) => {
+       const finalWidth = startWidth + (upEvent.clientX - startX);
+       if (finalWidth > 150) {
+           onResize?.(finalWidth);
+       }
+       document.removeEventListener('mousemove', handleMouseMove);
+       document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
 
   switch (attachment.type) {
     case 'audio':
@@ -1057,10 +1122,26 @@ const AttachmentRenderer: React.FC<{ attachment: Attachment; onImageClick?: (att
             <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest"><ImageIcon size={14} className="text-green-500" /> {attachment.name}</div>
             <button onClick={() => onImageClick?.(attachment)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 transition-colors"><Maximize2 size={14}/></button>
           </div>
-          <div className="relative group cursor-pointer" onClick={() => onImageClick?.(attachment)}>
-            <img src={attachment.url} alt={attachment.name} className="max-w-full rounded-2xl shadow-md border border-zinc-200 dark:border-zinc-800 group-hover:opacity-95 transition-opacity" />
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/5 rounded-2xl">
-              <div className="p-3 bg-white/20 backdrop-blur-md rounded-full text-white shadow-xl"><Maximize2 size={24}/></div>
+          <div className="relative group inline-block max-w-full">
+            <img 
+              ref={imgRef}
+              src={attachment.url} 
+              alt={attachment.name} 
+              className="rounded-2xl shadow-md border border-zinc-200 dark:border-zinc-800 max-w-full" 
+              style={{ width: localWidth ? `${localWidth}px` : '100%' }}
+              onClick={() => onImageClick?.(attachment)}
+            />
+            {!readOnly && (
+                <div 
+                    className="absolute bottom-2 right-2 p-1.5 bg-black/50 hover:bg-blue-500 text-white rounded cursor-nwse-resize opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm"
+                    onMouseDown={handleMouseDown}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <MoveDiagonal size={12} />
+                </div>
+            )}
+            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                <div className="p-3 bg-white/20 backdrop-blur-md rounded-full text-white shadow-xl pointer-events-auto cursor-pointer" onClick={() => onImageClick?.(attachment)}><Maximize2 size={24}/></div>
             </div>
           </div>
         </div>
@@ -1106,9 +1187,10 @@ interface BlockEditorProps {
   onImageClick: (att: Attachment) => void;
   fontSizeClass: string;
   disabled: boolean;
+  onAttachmentResize: (id: string, width: number) => void;
 }
 
-const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles: (f: File[]) => void }, BlockEditorProps>(({ content, attachments, onUpdate, onUpload, onImageClick, fontSizeClass, disabled }, ref) => {
+const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles: (f: File[]) => void }, BlockEditorProps>(({ content, attachments, onUpdate, onUpload, onImageClick, fontSizeClass, disabled, onAttachmentResize }, ref) => {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingRef = useRef(false);
@@ -1148,10 +1230,16 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
     return newBlocks;
   }, []);
 
-  // Sync blocks with content prop, but ONLY if content changed externally to avoid focus loss
+  // Use a ref for blocks to avoid adding it to dependency array of the sync effect
+  // This prevents the effect from running when blocks change locally (which would cause a revert to old prop)
+  const blocksRef = useRef(blocks);
+  useEffect(() => { blocksRef.current = blocks; });
+
+  // Sync blocks with content prop, but ONLY if content changed externally to avoid focus loss and circular updates
   useEffect(() => {
-    const currentSerialized = blocks.map(b => b.content).join('');
+    const currentSerialized = blocksRef.current.map(b => b.content).join('');
     if (content !== currentSerialized) {
+      // Only reset if the incoming content is different from what we currently have
       setBlocks(parseContent(content));
     }
   }, [content, parseContent]);
@@ -1170,7 +1258,6 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
 
   const handleDrop = (e: React.DragEvent, toIndex: number) => {
     e.preventDefault();
-    e.stopPropagation(); // Stop propagation to prevent bubbling to container
     if (!isDraggingRef.current) return;
     
     const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
@@ -1246,8 +1333,7 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
     <div 
       ref={containerRef}
       className={`w-full min-h-[60vh] pb-32 outline-none ${disabled ? 'opacity-50' : ''}`}
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => e.preventDefault()}
+      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
     >
       {blocks.map((block, index) => {
         if (block.type === 'attachment') {
@@ -1279,7 +1365,11 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
 
                {att ? (
                  <div className="">
-                    <AttachmentRenderer attachment={att} onImageClick={onImageClick} />
+                    <AttachmentRenderer 
+                      attachment={att} 
+                      onImageClick={onImageClick} 
+                      onResize={(w) => onAttachmentResize(att.id, w)} 
+                    />
                  </div>
                ) : (
                  <div className="p-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 text-xs rounded-lg">Missing Attachment: {block.attachmentId}</div>
@@ -1323,7 +1413,7 @@ const NoteReadingView: React.FC<{ title: string; content: string; attachments: A
             const attId = attachmentMatch[3];
             const attachment = attachments.find(a => a.id === attId);
             if (attachment) {
-              return <AttachmentRenderer key={idx} attachment={attachment} onImageClick={onImageClick} />;
+              return <AttachmentRenderer key={idx} attachment={attachment} onImageClick={onImageClick} readOnly />;
             }
           }
 
