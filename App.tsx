@@ -1399,25 +1399,31 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
 });
 
 const NoteReadingView: React.FC<{ title: string; content: string; attachments: Attachment[]; onImageClick: (att: Attachment) => void }> = ({ title, content, attachments, onImageClick }) => {
-  const lines = content.split('\n');
+  // Use the same splitting logic as BlockEditor for consistency to fix preview issues with whitespace
+  const regex = /(\[(?:File|Link): .*?\]\(att-.*?\))/g;
+  const parts = content.split(regex);
   
   return (
     <div className="relative">
       <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-100 mb-12 pb-6 border-b border-zinc-100 dark:border-zinc-900">{title || 'Untitled Note'}</h1>
       <div className="space-y-4">
-        {lines.map((line, idx) => {
-          if (!line.trim()) return <div key={idx} className="h-4" />;
+        {parts.map((part, idx) => {
+          if (!part) return null;
 
-          const attachmentMatch = line.match(/^\[(File|Link): (.*?)\]\((att-.*?)\)$/);
-          if (attachmentMatch) {
-            const attId = attachmentMatch[3];
+          const match = part.match(/^\[(?:File|Link): (.*?)\]\((att-.*?)\)$/);
+          if (match) {
+            const attId = match[2];
             const attachment = attachments.find(a => a.id === attId);
             if (attachment) {
               return <AttachmentRenderer key={idx} attachment={attachment} onImageClick={onImageClick} readOnly />;
             }
           }
 
-          return <p key={idx} className="leading-relaxed text-zinc-700 dark:text-zinc-300 text-lg">{line}</p>;
+          // Handle text parts (which might contain newlines)
+          // We can just render them as pre-wrap text
+          if (!part.trim()) return <div key={idx} className="h-4" />;
+          
+          return <p key={idx} className="leading-relaxed text-zinc-700 dark:text-zinc-300 text-lg whitespace-pre-wrap">{part}</p>;
         })}
       </div>
     </div>
