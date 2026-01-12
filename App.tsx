@@ -35,7 +35,11 @@ import {
   ShieldCheck,
   Hash,
   Pencil,
-  GripVertical
+  GripVertical,
+  Cloud,
+  Check,
+  Upload,
+  HardDrive
 } from 'lucide-react';
 import { Note, Folder, ViewMode, AppSettings, Attachment } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS, APP_ID } from './constants';
@@ -67,7 +71,21 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<{ mode: ViewMode; id?: string }>({ mode: ViewMode.All });
   const [activeNoteId, setActiveNoteId] = useState<string | null>(notes.length > 0 ? notes[0].id : null);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Storage & Sync Status
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [cloudStatus, setCloudStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [lastCloudSync, setLastCloudSync] = useState<number | null>(() => {
+    const saved = localStorage.getItem(`${APP_ID}-last-sync`);
+    return saved ? parseInt(saved, 10) : null;
+  });
+  const [syncTokens, setSyncTokens] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem(`${APP_ID}-sync-tokens`);
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
+  });
+
   const [isPreviewMode, setIsPreviewMode] = useState(false);
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<Attachment | null>(null);
   
@@ -79,7 +97,7 @@ const App: React.FC = () => {
   
   // Settings Modal states
   const [showSettings, setShowSettings] = useState(false);
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'appearance' | 'editor' | 'tags' | 'data'>('appearance');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'appearance' | 'editor' | 'tags' | 'sync' | 'data'>('appearance');
 
   // Folder Modal states
   const [showFolderModal, setShowFolderModal] = useState(false);
@@ -90,6 +108,7 @@ const App: React.FC = () => {
   const urlInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   
   // Ref for the BlockEditor to allow external insertion
   const blockEditorRef = useRef<{ insertContent: (text: string) => void, insertFiles: (files: File[]) => void }>(null);
@@ -147,45 +166,7 @@ const App: React.FC = () => {
     return Object.keys(tagUsage).sort((a, b) => tagUsage[b] - tagUsage[a]);
   }, [tagUsage]);
 
-  // --- Effects ---
-  useEffect(() => {
-    setSaveStatus('saving');
-    try {
-      localStorage.setItem(`${APP_ID}-notes`, JSON.stringify(notes));
-      const timer = setTimeout(() => setSaveStatus('saved'), 600);
-      return () => clearTimeout(timer);
-    } catch (e) {
-      setSaveStatus('error');
-    }
-  }, [notes]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(`${APP_ID}-folders`, JSON.stringify(folders));
-    } catch (e) {}
-  }, [folders]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(`${APP_ID}-settings`, JSON.stringify(settings));
-    } catch (e) {}
-    if (settings.theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [settings]);
-
-  useEffect(() => {
-    setIsPreviewMode(false);
-    setIsAddingTag(false);
-    setShowUrlModal(false);
-    setShowFolderModal(false);
-  }, [activeNoteId]);
-
-  useEffect(() => { if (isAddingTag && tagInputRef.current) tagInputRef.current.focus(); }, [isAddingTag]);
-  useEffect(() => { if (showUrlModal && urlInputRef.current) urlInputRef.current.focus(); }, [showUrlModal]);
-  useEffect(() => { if (showFolderModal && folderInputRef.current) folderInputRef.current.focus(); }, [showFolderModal]);
+  const isCloudConnected = Object.keys(syncTokens).length > 0;
 
   // --- Handlers ---
   const createNewNote = useCallback(() => {
@@ -209,6 +190,95 @@ const App: React.FC = () => {
       setCurrentView({ mode: ViewMode.All });
     }
   }, [currentView]);
+
+  // --- Effects ---
+  useEffect(() => {
+    setSaveStatus('saving');
+    try {
+      localStorage.setItem(`${APP_ID}-notes`, JSON.stringify(notes));
+      const timer = setTimeout(() => {
+        setSaveStatus('saved');
+        
+        // Trigger Cloud Sync if connected
+        if (isCloudConnected) {
+          setCloudStatus('syncing');
+          setTimeout(() => {
+            setCloudStatus('synced');
+            const now = Date.now();
+            setLastCloudSync(now);
+            localStorage.setItem(`${APP_ID}-last-sync`, now.toString());
+          }, 1500); // Simulate network delay
+        }
+      }, 600);
+      return () => clearTimeout(timer);
+    } catch (e) {
+      setSaveStatus('error');
+    }
+  }, [notes, isCloudConnected]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${APP_ID}-folders`, JSON.stringify(folders));
+    } catch (e) {}
+  }, [folders]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${APP_ID}-sync-tokens`, JSON.stringify(syncTokens));
+    } catch (e) {}
+  }, [syncTokens]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${APP_ID}-settings`, JSON.stringify(settings));
+    } catch (e) {}
+    if (settings.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    setIsPreviewMode(false);
+    setIsAddingTag(false);
+    setShowUrlModal(false);
+    setShowFolderModal(false);
+  }, [activeNoteId]);
+
+  useEffect(() => { if (isAddingTag && tagInputRef.current) tagInputRef.current.focus(); }, [isAddingTag]);
+  useEffect(() => { if (showUrlModal && urlInputRef.current) urlInputRef.current.focus(); }, [showUrlModal]);
+  useEffect(() => { if (showFolderModal && folderInputRef.current) folderInputRef.current.focus(); }, [showFolderModal]);
+
+  // Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for Ctrl (Windows/Linux) or Cmd (Mac)
+      if (e.ctrlKey || e.metaKey) {
+        const key = e.key.toLowerCase();
+        
+        // New Note (Ctrl+N)
+        if (key === 'n') {
+          e.preventDefault();
+          createNewNote();
+        } 
+        // Save (Ctrl+S) - Visual trigger only as auto-save is active
+        else if (key === 's') {
+          e.preventDefault();
+          setSaveStatus('saving');
+          setTimeout(() => setSaveStatus('saved'), 600);
+        } 
+        // Toggle Preview (Ctrl+P)
+        else if (key === 'p') {
+          e.preventDefault();
+          setIsPreviewMode(prev => !prev);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [createNewNote]);
 
   const handleSaveFolder = useCallback(() => {
     if (newFolderName.trim()) {
@@ -261,7 +331,7 @@ const App: React.FC = () => {
     }
   };
 
-  // Process files and add them to the active note's attachments, returning the new attachment objects
+  // Process files
   const processFiles = async (files: File[]): Promise<Attachment[]> => {
      const MAX_FILE_SIZE = 2.5 * 1024 * 1024;
      const results = await Promise.all(files.map(file => {
@@ -302,7 +372,6 @@ const App: React.FC = () => {
     const files = Array.from(e.target.files || []) as File[];
     if (files.length === 0 || !activeNoteId || activeNote?.isTrashed) return;
     
-    // Delegate to BlockEditor via ref
     if (blockEditorRef.current) {
       blockEditorRef.current.insertFiles(files);
     }
@@ -316,16 +385,82 @@ const App: React.FC = () => {
     const attachment: Attachment = { id, name: 'Web Link', type: 'url', url };
     const reference = `\n[Link: ${url}](${id})\n`;
     
-    // Update attachments state
     updateActiveNote({ attachments: [...activeNote.attachments, attachment] });
-    
-    // Insert text into editor
     if (blockEditorRef.current) {
       blockEditorRef.current.insertContent(reference);
     }
 
     setNewUrlValue('');
     setShowUrlModal(false);
+  };
+
+  // Sync Logic
+  const handleConnectProvider = (provider: 'google' | 'dropbox') => {
+    // Simulating an OAuth flow with a timeout
+    const mockToken = `mock-token-${provider}-${Date.now()}`;
+    setSyncTokens(prev => ({ ...prev, [provider]: mockToken }));
+    setCloudStatus('syncing');
+    setTimeout(() => {
+      setCloudStatus('synced');
+      setLastCloudSync(Date.now());
+    }, 1500);
+  };
+
+  const handleDisconnectProvider = (provider: 'google' | 'dropbox') => {
+    if (confirm(`Disconnect ${provider === 'google' ? 'Google Drive' : 'Dropbox'}? This will stop syncing.`)) {
+      setSyncTokens(prev => {
+        const next = { ...prev };
+        delete next[provider];
+        return next;
+      });
+    }
+  };
+
+  // Import/Export Logic
+  const handleExportData = () => {
+    const data = {
+      notes,
+      folders,
+      settings,
+      exportDate: Date.now(),
+      appId: APP_ID
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `super-notes-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (json.appId !== APP_ID) {
+          if (!confirm("This backup file doesn't match the App ID. Try to import anyway?")) return;
+        }
+
+        if (confirm(`Found ${json.notes?.length || 0} notes and ${json.folders?.length || 0} folders. Replace current data?`)) {
+          if (json.notes) setNotes(json.notes);
+          if (json.folders) setFolders(json.folders);
+          if (json.settings) setSettings(json.settings);
+          alert('Import successful!');
+          window.location.reload();
+        }
+      } catch (err) {
+        alert('Failed to parse backup file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   const toggleStar = (id: string) => setNotes(prev => prev.map(n => n.id === id ? { ...n, isStarred: !n.isStarred } : n));
@@ -362,7 +497,7 @@ const App: React.FC = () => {
       {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl h-[550px] flex overflow-hidden rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl h-[600px] flex overflow-hidden rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-200">
             {/* Settings Sidebar */}
             <div className="w-48 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 p-4 shrink-0">
               <h2 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-6 ml-2">Settings</h2>
@@ -376,6 +511,9 @@ const App: React.FC = () => {
                 <button onClick={() => setActiveSettingsTab('tags')} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeSettingsTab === 'tags' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
                   <Tag size={16}/> Tag Manager
                 </button>
+                <button onClick={() => setActiveSettingsTab('sync')} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeSettingsTab === 'sync' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
+                  <Cloud size={16}/> Sync & Backup
+                </button>
                 <button onClick={() => setActiveSettingsTab('data')} className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeSettingsTab === 'data' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'}`}>
                   <Database size={16}/> Data & Safety
                 </button>
@@ -385,7 +523,7 @@ const App: React.FC = () => {
             {/* Settings Content */}
             <div className="flex-1 flex flex-col min-w-0">
               <div className="flex items-center justify-between p-6 border-b border-zinc-100 dark:border-zinc-800">
-                <h3 className="font-bold capitalize">{activeSettingsTab === 'tags' ? 'Tag Manager' : `${activeSettingsTab} Settings`}</h3>
+                <h3 className="font-bold capitalize">{activeSettingsTab === 'tags' ? 'Tag Manager' : activeSettingsTab === 'sync' ? 'Sync & Backup' : `${activeSettingsTab} Settings`}</h3>
                 <button onClick={() => setShowSettings(false)} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full text-zinc-400 transition-colors"><X size={20}/></button>
               </div>
               <div className="flex-1 overflow-y-auto p-8">
@@ -486,6 +624,61 @@ const App: React.FC = () => {
                   </div>
                 )}
 
+                {activeSettingsTab === 'sync' && (
+                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-1 duration-200">
+                    <div>
+                      <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-4">Cloud Providers</h4>
+                      <div className="space-y-3">
+                        {['google', 'dropbox'].map((provider) => {
+                          const isConnected = !!syncTokens[provider];
+                          return (
+                            <div key={provider} className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl">
+                              <div className="flex items-center gap-4">
+                                <div className={`p-3 rounded-xl ${isConnected ? 'bg-blue-500 text-white' : 'bg-white dark:bg-zinc-800 text-zinc-400'}`}>
+                                  {provider === 'google' ? <HardDrive size={20}/> : <Cloud size={20}/>}
+                                </div>
+                                <div>
+                                  <div className="font-bold capitalize text-sm">{provider === 'google' ? 'Google Drive' : 'Dropbox'}</div>
+                                  <div className="text-[10px] text-zinc-500">
+                                    {isConnected ? `Connected • Last sync: ${lastCloudSync ? new Date(lastCloudSync).toLocaleTimeString() : 'Just now'}` : 'Not connected'}
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => isConnected ? handleDisconnectProvider(provider as any) : handleConnectProvider(provider as any)}
+                                className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${isConnected ? 'border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800' : 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-transparent hover:opacity-90'}`}
+                              >
+                                {isConnected ? 'Disconnect' : 'Connect'}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-4">Manual Backup</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button onClick={handleExportData} className="flex flex-col items-center gap-3 p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 rounded-xl transition-all group">
+                          <div className="p-3 bg-white dark:bg-zinc-800 rounded-full text-zinc-400 group-hover:text-blue-500 transition-colors shadow-sm"><Download size={20}/></div>
+                          <div className="text-center">
+                            <div className="text-xs font-bold">Export Backup</div>
+                            <div className="text-[10px] text-zinc-400 mt-1">Download JSON file</div>
+                          </div>
+                        </button>
+                        <button onClick={() => importInputRef.current?.click()} className="flex flex-col items-center gap-3 p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 rounded-xl transition-all group">
+                          <div className="p-3 bg-white dark:bg-zinc-800 rounded-full text-zinc-400 group-hover:text-green-500 transition-colors shadow-sm"><Upload size={20}/></div>
+                          <div className="text-center">
+                            <div className="text-xs font-bold">Import Backup</div>
+                            <div className="text-[10px] text-zinc-400 mt-1">Restore from JSON</div>
+                          </div>
+                        </button>
+                        <input ref={importInputRef} type="file" accept=".json" onChange={handleImportData} className="hidden" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {activeSettingsTab === 'data' && (
                   <div className="space-y-8 animate-in fade-in slide-in-from-bottom-1 duration-200">
                     <div className="p-4 bg-zinc-50 dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
@@ -493,7 +686,7 @@ const App: React.FC = () => {
                         <ShieldCheck size={20} className="text-green-500" />
                         <h4 className="text-sm font-bold">Local Encryption</h4>
                       </div>
-                      <p className="text-xs text-zinc-500 leading-relaxed">Your data is stored exclusively in your browser's local storage. We never upload your personal notes to our servers.</p>
+                      <p className="text-xs text-zinc-500 leading-relaxed">Your data is stored exclusively in your browser's local storage. We never upload your personal notes to our servers unless you explicitly connect a cloud provider.</p>
                     </div>
                     <div>
                       <h4 className="text-xs font-bold text-red-500 uppercase tracking-widest mb-4">Danger Zone</h4>
@@ -693,6 +886,17 @@ const App: React.FC = () => {
             <div className="h-14 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 shrink-0">
                <div className="flex items-center gap-4 text-xs font-medium text-zinc-400">
                 <div className="flex items-center gap-1"><span>{activeNote.folderId ? folders.find(f => f.id === activeNote.folderId)?.name : 'Drafts'}</span></div>
+                
+                {/* Sync Status Indicators */}
+                {isCloudConnected && (
+                  <>
+                    <div className="w-px h-3 bg-zinc-200 dark:bg-zinc-800"></div>
+                    {cloudStatus === 'syncing' && <div className="text-blue-500 flex items-center gap-1 animate-pulse"><Cloud size={12}/> Syncing...</div>}
+                    {cloudStatus === 'synced' && <div className="text-blue-500 flex items-center gap-1"><Cloud size={12}/> Synced</div>}
+                  </>
+                )}
+
+                <div className="w-px h-3 bg-zinc-200 dark:bg-zinc-800"></div>
                 {saveStatus === 'saving' && <div className="animate-pulse">Saving...</div>}
                 {saveStatus === 'saved' && <div className="text-green-500 flex items-center gap-1"><CheckCircle2 size={12}/> Saved</div>}
                 {saveStatus === 'error' && <div className="text-red-500 flex items-center gap-1 font-bold">Storage Full!</div>}
