@@ -406,10 +406,32 @@ const App: React.FC = () => {
 
   const handleAddUrl = () => {
     if (!activeNote || !newUrlValue.trim() || activeNote.isTrashed) return;
-    const url = newUrlValue.trim().startsWith('http') ? newUrlValue.trim() : `https://${newUrlValue.trim()}`;
+    
+    let urlString = newUrlValue.trim();
+    // Simple protocol check
+    if (!/^https?:\/\//i.test(urlString)) {
+        urlString = `https://${urlString}`;
+    }
+
     const id = `att-${Date.now()}`;
-    const attachment: Attachment = { id, name: 'Web Link', type: 'url', url };
-    const reference = `\n[Link: ${url}](${id})\n`;
+    let name = 'Web Link';
+    
+    try {
+        const urlObj = new URL(urlString);
+        const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+        if (pathSegments.length > 0) {
+            // Use the last segment as title, capitalize and replace dashes
+            const lastSegment = pathSegments[pathSegments.length - 1];
+            name = lastSegment.replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        } else {
+            name = urlObj.hostname;
+        }
+    } catch(e) {
+        name = urlString;
+    }
+
+    const attachment: Attachment = { id, name, type: 'url', url: urlString };
+    const reference = `\n[Link: ${name}](${id})\n`;
     
     updateActiveNote({ attachments: [...activeNote.attachments, attachment] });
     if (blockEditorRef.current) {
@@ -1147,18 +1169,59 @@ const AttachmentRenderer: React.FC<{
         </div>
       );
     case 'url':
-      return (
-        <div className="my-4 p-4 bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 rounded-2xl transition-all group flex items-center justify-between">
-          <a href={attachment.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 flex-1 min-w-0">
-            <div className="p-2.5 bg-white dark:bg-zinc-800 rounded-xl text-blue-500 shadow-sm"><Globe size={20}/></div>
-            <div className="min-w-0">
-              <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate">Visit Resource</div>
-              <div className="text-[10px] text-zinc-400 truncate mt-0.5">{attachment.url}</div>
+      try {
+        const urlObj = new URL(attachment.url);
+        const hostname = urlObj.hostname;
+        const faviconUrl = `https://www.google.com/s2/favicons?domain=${hostname}&sz=128`;
+        
+        return (
+          <div className="my-4 group relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-all hover:border-zinc-300 dark:hover:border-zinc-700">
+            <a href={attachment.url} target="_blank" rel="noopener noreferrer" className="flex items-stretch">
+              {/* Image Section */}
+              <div className="w-24 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0 border-r border-zinc-200 dark:border-zinc-800 relative overflow-hidden">
+                  <img 
+                    src={faviconUrl} 
+                    alt="" 
+                    className="w-10 h-10 object-contain opacity-90 group-hover:scale-110 transition-transform duration-500"
+                    onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0'; }}
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center -z-10 text-zinc-300">
+                     <Globe size={24} />
+                  </div>
+              </div>
+              
+              {/* Content Section */}
+              <div className="flex-1 min-w-0 p-4 flex flex-col justify-center">
+                  <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate pr-6 mb-1">
+                      {attachment.name && attachment.name !== 'Web Link' ? attachment.name : hostname}
+                  </h4>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-1 mb-2 font-mono opacity-80">
+                      {attachment.url}
+                  </p>
+                  <div className="flex items-center gap-2">
+                     <div className={`w-2 h-2 rounded-full ${attachment.url.startsWith('https') ? 'bg-green-500' : 'bg-zinc-400'}`}></div>
+                     <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{hostname}</span>
+                  </div>
+              </div>
+
+              {/* Action Icon */}
+              <div className="absolute top-3 right-3 text-zinc-300 group-hover:text-blue-500 transition-colors">
+                 <ExternalLink size={14} />
+              </div>
+            </a>
+          </div>
+        );
+      } catch (e) {
+          // Fallback for invalid URLs
+           return (
+            <div className="my-4 p-4 bg-zinc-50 dark:bg-zinc-900 border border-red-200 dark:border-red-900/30 rounded-2xl flex items-center justify-between">
+              <div className="flex items-center gap-4 text-red-500">
+                <AlertTriangle size={20}/>
+                <span className="text-xs font-bold">Invalid Link: {attachment.url}</span>
+              </div>
             </div>
-            <ExternalLink size={14} className="text-zinc-300 group-hover:text-blue-500 transition-colors ml-auto" />
-          </a>
-        </div>
-      );
+           );
+      }
     default:
       return (
         <div className="my-4 p-4 flex items-center justify-between bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl group transition-all shadow-sm">
