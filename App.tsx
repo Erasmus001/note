@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useImperativeHandle, forwardRef, useLayoutEffect } from 'react';
 import { 
   FileText, 
   Star, 
@@ -40,7 +40,9 @@ import {
   Check,
   Upload,
   HardDrive,
-  MoveDiagonal
+  MoveDiagonal,
+  Twitter,
+  Youtube
 } from 'lucide-react';
 import { Note, Folder, ViewMode, AppSettings, Attachment } from './types';
 import { INITIAL_NOTES, INITIAL_FOLDERS, APP_ID } from './constants';
@@ -49,6 +51,18 @@ import { INITIAL_NOTES, INITIAL_FOLDERS, APP_ID } from './constants';
 type Block = 
   | { id: string; type: 'text'; content: string }
   | { id: string; type: 'attachment'; content: string; attachmentId: string };
+
+// --- Helpers for Embeds ---
+const getYouTubeId = (url: string) => {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+};
+
+const getTweetId = (url: string) => {
+  const match = url.match(/^https?:\/\/(?:twitter\.com|x\.com)\/(?:#!\/)?(\w+)\/status(?:es)?\/(\d+)/);
+  return match ? match[2] : null;
+};
 
 const App: React.FC = () => {
   // --- State ---
@@ -416,18 +430,28 @@ const App: React.FC = () => {
     const id = `att-${Date.now()}`;
     let name = 'Web Link';
     
-    try {
-        const urlObj = new URL(urlString);
-        const pathSegments = urlObj.pathname.split('/').filter(Boolean);
-        if (pathSegments.length > 0) {
-            // Use the last segment as title, capitalize and replace dashes
-            const lastSegment = pathSegments[pathSegments.length - 1];
-            name = lastSegment.replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        } else {
-            name = urlObj.hostname;
+    // Check for YouTube/Tweet to auto-name better
+    const ytId = getYouTubeId(urlString);
+    const twId = getTweetId(urlString);
+
+    if (ytId) {
+        name = 'YouTube Video';
+    } else if (twId) {
+        name = 'Tweet';
+    } else {
+        try {
+            const urlObj = new URL(urlString);
+            const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+            if (pathSegments.length > 0) {
+                // Use the last segment as title, capitalize and replace dashes
+                const lastSegment = pathSegments[pathSegments.length - 1];
+                name = lastSegment.replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            } else {
+                name = urlObj.hostname;
+            }
+        } catch(e) {
+            name = urlString;
         }
-    } catch(e) {
-        name = urlString;
     }
 
     const attachment: Attachment = { id, name, type: 'url', url: urlString };
@@ -1079,6 +1103,34 @@ const NoteListItem: React.FC<{ note: Note; active: boolean; onClick: () => void;
   </div>
 ));
 
+const TweetEmbed = ({ tweetId }: { tweetId: string }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Inject Twitter widget script if not present
+    if (!document.querySelector('script[src="https://platform.twitter.com/widgets.js"]')) {
+      const script = document.createElement('script');
+      script.src = "https://platform.twitter.com/widgets.js";
+      script.async = true;
+      document.body.appendChild(script);
+    }
+
+    const interval = setInterval(() => {
+        const t = (window as any).twttr;
+        if (t && t.widgets && containerRef.current && containerRef.current.innerHTML === '') {
+            t.widgets.createTweet(tweetId, containerRef.current, {
+                theme: document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+            });
+            clearInterval(interval);
+        }
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [tweetId]);
+
+  return <div ref={containerRef} className="my-6 min-h-[150px] flex justify-center" />;
+};
+
 /**
  * Visual renderer for attachments.
  */
@@ -1169,6 +1221,37 @@ const AttachmentRenderer: React.FC<{
         </div>
       );
     case 'url':
+      const youtubeId = getYouTubeId(attachment.url);
+      if (youtubeId) {
+        return (
+            <div className="my-6">
+                <div className="flex items-center gap-2 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest"><Youtube size={14} className="text-red-600" /> YouTube Embed</div>
+                <div className="rounded-2xl overflow-hidden shadow-lg border border-zinc-200 dark:border-zinc-800 bg-black aspect-video relative group">
+                    <iframe 
+                        width="100%" 
+                        height="100%" 
+                        src={`https://www.youtube.com/embed/${youtubeId}`} 
+                        title={attachment.name}
+                        frameBorder="0" 
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                        allowFullScreen
+                        className="absolute inset-0"
+                    ></iframe>
+                </div>
+            </div>
+        );
+      }
+
+      const tweetId = getTweetId(attachment.url);
+      if (tweetId) {
+        return (
+            <div className="my-6">
+                 <div className="flex items-center gap-2 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest"><Twitter size={14} className="text-sky-500" /> Social Embed</div>
+                 <TweetEmbed tweetId={tweetId} />
+            </div>
+        );
+      }
+
       try {
         const urlObj = new URL(attachment.url);
         const hostname = urlObj.hostname;
@@ -1236,6 +1319,41 @@ const AttachmentRenderer: React.FC<{
         </div>
       );
   }
+};
+
+/**
+ * Custom Textarea that auto-resizes.
+ */
+const AutoResizeTextarea = ({ value, onChange, disabled, placeholder, className, minHeight }: any) => {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const adjustHeight = useCallback(() => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    adjustHeight();
+  }, [value, adjustHeight]);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      value={value}
+      onChange={(e) => {
+        adjustHeight();
+        onChange(e);
+      }}
+      disabled={disabled}
+      placeholder={placeholder}
+      className={className}
+      style={{ minHeight }}
+      rows={1}
+    />
+  );
 };
 
 /**
@@ -1387,11 +1505,6 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
     insertFiles
   }));
 
-  const autoResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    e.target.style.height = 'auto';
-    e.target.style.height = e.target.scrollHeight + 'px';
-  };
-
   return (
     <div 
       ref={containerRef}
@@ -1441,18 +1554,14 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
           );
         } else {
           return (
-            <textarea
+            <AutoResizeTextarea
               key={block.id}
               value={block.content}
-              onChange={(e) => {
-                updateBlockContent(index, e.target.value);
-                autoResize(e);
-              }}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateBlockContent(index, e.target.value)}
               disabled={disabled}
               placeholder={index === 0 && blocks.length === 1 ? "Start capturing your thoughts..." : undefined}
               className={`w-full bg-transparent border-none outline-none resize-none leading-relaxed text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-200 dark:placeholder:text-zinc-800 ${fontSizeClass} overflow-hidden`}
-              style={{ minHeight: '1.5em' }}
-              onFocus={(e) => autoResize(e as any)}
+              minHeight="1.5em"
             />
           );
         }
