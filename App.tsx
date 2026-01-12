@@ -1170,6 +1170,7 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
 
   const handleDrop = (e: React.DragEvent, toIndex: number) => {
     e.preventDefault();
+    e.stopPropagation(); // Stop propagation to prevent bubbling to container
     if (!isDraggingRef.current) return;
     
     const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
@@ -1186,22 +1187,6 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
   
   const handleDragEnd = () => {
     isDraggingRef.current = false;
-  };
-
-  // Handle File Drop on Editor
-  const handleEditorDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (isDraggingRef.current) {
-        isDraggingRef.current = false;
-        return; 
-    }
-
-    const files = Array.from(e.dataTransfer.files) as File[];
-    if (files.length > 0) {
-       await insertFiles(files);
-    }
   };
 
   const insertFiles = async (files: File[]) => {
@@ -1261,8 +1246,8 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
     <div 
       ref={containerRef}
       className={`w-full min-h-[60vh] pb-32 outline-none ${disabled ? 'opacity-50' : ''}`}
-      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-      onDrop={handleEditorDrop}
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => e.preventDefault()}
     >
       {blocks.map((block, index) => {
         if (block.type === 'attachment') {
@@ -1319,11 +1304,6 @@ const BlockEditor = forwardRef<{ insertContent: (t: string) => void, insertFiles
           );
         }
       })}
-      
-      {/* Visual cue for drop zone */}
-      <div className="mt-8 p-8 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-2xl text-center text-zinc-300 dark:text-zinc-700 text-sm pointer-events-none">
-        Drag and drop files here to upload
-      </div>
     </div>
   );
 });
