@@ -101,7 +101,7 @@ const App: React.FC = () => {
     } catch { return {}; }
   });
 
-  const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [isPreviewMode, setIsPreviewMode] = useState(true);
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<Attachment | null>(null);
   
   // UI states
@@ -124,6 +124,7 @@ const App: React.FC = () => {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const isCreatingNoteRef = useRef(false);
   
   // Ref for the BlockEditor to allow external insertion
   const blockEditorRef = useRef<{ insertContent: (text: string) => void, insertFiles: (files: File[]) => void }>(null);
@@ -185,6 +186,7 @@ const App: React.FC = () => {
 
   // --- Handlers ---
   const createNewNote = useCallback(() => {
+    isCreatingNoteRef.current = true;
     const newNote: Note = {
       id: `n-${Date.now()}`,
       title: 'Untitled Note',
@@ -266,7 +268,12 @@ const App: React.FC = () => {
   }, [settings]);
 
   useEffect(() => {
-    setIsPreviewMode(false);
+    if (isCreatingNoteRef.current) {
+      setIsPreviewMode(false);
+      isCreatingNoteRef.current = false;
+    } else {
+      setIsPreviewMode(true);
+    }
     setIsAddingTag(false);
     setShowUrlModal(false);
     setShowFolderModal(false);
@@ -859,7 +866,7 @@ const App: React.FC = () => {
       )}
 
       {/* Sidebar */}
-      <aside className={`${isSidebarCollapsed ? 'w-16' : 'w-64'} hidden md:flex flex-col border-r border-zinc-200 dark:border-zinc-800 transition-all duration-300 shrink-0 bg-white dark:bg-zinc-950`}>
+      <aside className={`${isSidebarCollapsed ? 'w-16' : 'w-64'} hidden md:flex flex-col border-r border-zinc-200 dark:border-zinc-800 transition-all duration-200 shrink-0 bg-white dark:bg-zinc-950`}>
         <div className="p-4 flex items-center justify-between shrink-0">
           {!isSidebarCollapsed && <div className="font-bold text-xl tracking-tighter">Super Notes</div>}
           <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-zinc-500"><Menu size={18} /></button>
@@ -1140,7 +1147,7 @@ const AttachmentRenderer: React.FC<{
   onResize?: (width: number) => void; 
   readOnly?: boolean;
 }> = ({ attachment, onImageClick, onResize, readOnly }) => {
-  const cardClasses = "my-4 p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl group transition-all duration-300";
+  const cardClasses = "my-4 p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl group transition-all duration-200";
   const imgRef = useRef<HTMLImageElement>(null);
   const [localWidth, setLocalWidth] = useState(attachment.width || 0);
 
