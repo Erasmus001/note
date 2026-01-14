@@ -2,11 +2,13 @@
 export { default as Sidebar } from "./layout/Sidebar";
 export { default as SidebarNavItem } from "./layout/SidebarNavItem";
 export { default as NoteExplorer } from "./layout/NoteExplorer";
+export { RootLayout } from "./layout/RootLayout";
 
 export { default as NoteListItem } from "./notes/NoteListItem";
 export { default as BlockEditor } from "./notes/BlockEditor";
 export type { BlockEditorRef } from "./notes/BlockEditor";
-export { default as NoteReadingView } from "./notes/NoteReadingView";
+export { default as RichTextEditor } from "./notes/RichTextEditor";
+export type { RichTextEditorRef } from "./notes/RichTextEditor";
 
 export { default as AttachmentRenderer } from "./attachments/AttachmentRenderer";
 export { default as TweetEmbed } from "./attachments/TweetEmbed";

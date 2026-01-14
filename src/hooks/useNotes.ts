@@ -3,10 +3,7 @@ import { useUser } from "@clerk/clerk-react";
 import { Note, ViewMode, Attachment } from "../../types";
 import { db, id } from "../lib/db";
 
-export const useNotes = (
-  currentView: { mode: ViewMode; id?: string },
-  searchQuery: string,
-) => {
+export const useNotes = () => {
   const { user } = useUser();
   const userId = user?.id;
 
@@ -20,55 +17,8 @@ export const useNotes = (
     return data.notes as Note[];
   }, [data]);
 
-  const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
-
-  // Update activeNoteId when notes load if none selected
-  useMemo(() => {
-    if (!activeNoteId && notes.length > 0) {
-      setActiveNoteId(notes[0].id);
-    }
-  }, [notes, activeNoteId]);
-
-  const saveStatus = isLoading ? "saving" : error ? "error" : "saved";
-
-  // Filtered and sorted notes
-  const filteredNotes = useMemo(() => {
-    let result = notes;
-    if (currentView.mode === ViewMode.Starred)
-      result = result.filter((n) => n.isStarred && !n.isTrashed);
-    else if (currentView.mode === ViewMode.Trash)
-      result = result.filter((n) => n.isTrashed);
-    else if (currentView.mode === ViewMode.Folder)
-      result = result.filter(
-        (n) => n.folderId === currentView.id && !n.isTrashed,
-      );
-    else if (currentView.mode === ViewMode.Tag)
-      result = result.filter(
-        (n) => n.tags.includes(currentView.id || "") && !n.isTrashed,
-      );
-    else result = result.filter((n) => !n.isTrashed);
-
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (n) =>
-          n.title.toLowerCase().includes(q) ||
-          n.content.toLowerCase().includes(q) ||
-          n.tags.some((t) => t.toLowerCase().includes(q)),
-      );
-    }
-
-    return [...result].sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1;
-      if (!a.isPinned && b.isPinned) return 1;
-      return b.updatedAt - a.updatedAt;
-    });
-  }, [notes, currentView, searchQuery]);
-
-  const activeNote = useMemo(
-    () => notes.find((n) => n.id === activeNoteId) || null,
-    [notes, activeNoteId],
-  );
+  // No internal activeNoteId state
+  // No internal filtering
 
   // Tag usage statistics
   const tagUsage = useMemo(() => {
@@ -96,6 +46,7 @@ export const useNotes = (
         userId,
         title: "Untitled Note",
         content: "",
+        jsonContent: null,
         tags: [],
         attachments: [],
         isPinned: false,
@@ -107,7 +58,6 @@ export const useNotes = (
         folderId: folderId || "",
       };
       db.transact(db.tx.notes[newId].update(newNote));
-      setActiveNoteId(newId);
       return { id: newId, ...newNote } as Note;
     },
     [userId],
@@ -146,9 +96,8 @@ export const useNotes = (
   const moveToTrash = useCallback(
     (noteId: string) => {
       updateNote(noteId, { isTrashed: true, isPinned: false });
-      if (activeNoteId === noteId) setActiveNoteId(null);
     },
-    [activeNoteId, updateNote],
+    [updateNote],
   );
 
   const restoreNote = useCallback(
@@ -158,15 +107,11 @@ export const useNotes = (
     [updateNote],
   );
 
-  const deletePermanently = useCallback(
-    (noteId: string) => {
-      if (!confirm("Are you sure you want to delete this note permanently?"))
-        return;
-      db.transact(db.tx.notes[noteId].delete());
-      if (activeNoteId === noteId) setActiveNoteId(null);
-    },
-    [activeNoteId],
-  );
+  const deletePermanently = useCallback((noteId: string) => {
+    if (!confirm("Are you sure you want to delete this note permanently?"))
+      return;
+    db.transact(db.tx.notes[noteId].delete());
+  }, []);
 
   const emptyTrash = useCallback(() => {
     const trashedNotes = notes.filter((n) => n.isTrashed);
@@ -179,10 +124,7 @@ export const useNotes = (
       return;
     const txs = trashedNotes.map((n) => db.tx.notes[n.id].delete());
     db.transact(txs);
-    if (activeNoteId && trashedNotes.some((n) => n.id === activeNoteId)) {
-      setActiveNoteId(null);
-    }
-  }, [notes, activeNoteId]);
+  }, [notes]);
 
   const addAttachment = useCallback(
     (noteId: string, attachment: Attachment) => {
@@ -242,11 +184,7 @@ export const useNotes = (
     notes,
     isLoading,
     error,
-    activeNote,
-    activeNoteId,
-    setActiveNoteId,
-    filteredNotes,
-    saveStatus,
+    saveStatus: isLoading ? "saving" : error ? "error" : "saved",
     tagUsage,
     allTags,
     createNote,

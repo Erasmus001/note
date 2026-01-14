@@ -1,10 +1,9 @@
-
 export type NoteId = string;
 
 export interface Attachment {
   id: string;
   name: string;
-  type: 'audio' | 'video' | 'image' | 'document' | 'url';
+  type: "audio" | "video" | "image" | "document" | "url";
   url: string;
   size?: number;
   width?: number;
@@ -14,6 +13,7 @@ export interface Note {
   id: NoteId;
   title: string;
   content: string;
+  jsonContent?: any;
   tags: string[];
   attachments: Attachment[];
   folderId?: string;
@@ -32,15 +32,15 @@ export interface Folder {
 }
 
 export enum ViewMode {
-  All = 'all',
-  Starred = 'starred',
-  Trash = 'trash',
-  Tag = 'tag',
-  Folder = 'folder'
+  All = "all",
+  Starred = "starred",
+  Trash = "trash",
+  Tag = "tag",
+  Folder = "folder",
 }
 
 export interface AppSettings {
-  theme: 'light' | 'dark';
-  fontSize: 'sm' | 'base' | 'lg';
-  editorWidth: 'narrow' | 'standard' | 'full';
+  theme: "light" | "dark";
+  fontSize: "sm" | "base" | "lg";
+  editorWidth: "narrow" | "standard" | "full";
 }

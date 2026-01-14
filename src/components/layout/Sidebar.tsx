@@ -75,21 +75,21 @@ const Sidebar: React.FC<SidebarProps> = ({
           label="All Notes"
           active={currentView.mode === ViewMode.All}
           collapsed={isCollapsed}
-          onClick={() => onSetView({ mode: ViewMode.All })}
+          to="/notes"
         />
         <SidebarNavItem
           icon={<Star size={18} />}
           label="Starred"
           active={currentView.mode === ViewMode.Starred}
           collapsed={isCollapsed}
-          onClick={() => onSetView({ mode: ViewMode.Starred })}
+          to="/starred"
         />
         <SidebarNavItem
           icon={<Trash2 size={18} />}
           label="Trash"
           active={currentView.mode === ViewMode.Trash}
           collapsed={isCollapsed}
-          onClick={() => onSetView({ mode: ViewMode.Trash })}
+          to="/trash"
         />
 
         {!isCollapsed && (
@@ -113,10 +113,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                 key={f.id}
                 icon={<span>{f.icon}</span>}
                 label={f.name}
-                active={
-                  currentView.id === f.id
-                }
-                onClick={() => onSetView({ mode: ViewMode.Folder, id: f.id })}
+                active={currentView.mode === ViewMode.Folder && currentView.id === f.id}
+                to={`/folders/${f.id}`}
                 actions={[
                   {
                     icon: <Pencil size={12} />,
@@ -156,7 +154,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   active={
                     currentView.mode === ViewMode.Tag && currentView.id === tag
                   }
-                  onClick={() => onSetView({ mode: ViewMode.Tag, id: tag })}
+                  to={`/tags/${encodeURIComponent(tag)}`}
                 />
               ))}
             </div>

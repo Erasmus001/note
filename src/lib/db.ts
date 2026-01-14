@@ -1,6 +1,7 @@
 import { init, i, id, InstaQLEntity } from "@instantdb/react";
 
 // Instant app ID from environment variables
+// @ts-ignore
 const APP_ID = import.meta.env.VITE_INSTANTDB_APP_ID;
 
 if (!APP_ID) {
@@ -13,7 +14,8 @@ const schema = i.schema({
     notes: i.entity({
       userId: i.string(),
       title: i.string(),
-      content: i.string(),
+      content: i.string(), // Plain text for search/preview
+      jsonContent: i.json(), // Editor.js JSON blocks
       tags: i.json(), // InstantDB supports json for arrays/objects
       attachments: i.json(),
       folderId: i.string(),

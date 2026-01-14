@@ -38,8 +38,14 @@ const NoteListItem: React.FC<NoteListItemProps> = React.memo(
         )}
       </div>
       <p className="text-[11px] text-zinc-500 line-clamp-2 leading-relaxed opacity-80 h-8 overflow-hidden">
-        {note.content.substring(0, 100).trim() ||
-          "No preview content available."}
+        {(typeof note.content === "string"
+          ? note.content
+          : (note.content as any)?.blocks
+            ? "Rich Text Note"
+            : ""
+        )
+          .substring(0, 100)
+          .trim() || "No preview content available."}
       </p>
       <div className="flex items-center justify-between mt-3">
         <div className="flex gap-1">
