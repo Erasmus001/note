@@ -33,7 +33,7 @@ const AttachmentRenderer: React.FC<AttachmentRendererProps> = ({
   onResize,
   readOnly
 }) => {
-  const cardClasses = "my-4 p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl group transition-all duration-200";
+  const cardClasses = "my-4 p-4 bg-zinc-50 border border-zinc-200 rounded-2xl group transition-all duration-200";
   const imgRef = useRef<HTMLImageElement>(null);
   const [localWidth, setLocalWidth] = useState(attachment.width || 0);
 
@@ -86,7 +86,7 @@ const AttachmentRenderer: React.FC<AttachmentRendererProps> = ({
           <div className="flex items-center gap-3 text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3">
             <Film size={14} className="text-blue-500" /> Video File: {attachment.name}
           </div>
-          <video controls className="w-full rounded-xl shadow-lg border border-zinc-200 dark:border-zinc-800" src={attachment.url} />
+          <video controls className="w-full rounded-xl shadow-lg border border-zinc-200" src={attachment.url} />
         </div>
       );
     case 'image':
@@ -96,16 +96,13 @@ const AttachmentRenderer: React.FC<AttachmentRendererProps> = ({
             <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
               <ImageIcon size={14} className="text-green-500" /> {attachment.name}
             </div>
-            {/* <button onClick={() => onImageClick?.(attachment)} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 transition-colors">
-              <Maximize2 size={14} />
-            </button> */}
           </div>
           <div className="relative group inline-block max-w-full">
             <img
               ref={imgRef}
               src={attachment.url}
               alt={attachment.name}
-              className="rounded-2xl shadow-md border border-zinc-200 dark:border-zinc-800 max-w-full"
+              className="rounded-2xl shadow-md border border-zinc-200 max-w-full"
               style={{ width: localWidth ? `${localWidth}px` : '100%' }}
               onClick={() => onImageClick?.(attachment)}
             />
@@ -134,7 +131,7 @@ const AttachmentRenderer: React.FC<AttachmentRendererProps> = ({
             <div className="flex items-center gap-2 mb-2 text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
               <Youtube size={14} className="text-red-600" /> YouTube Embed
             </div>
-            <div className="rounded-2xl overflow-hidden shadow-lg border border-zinc-200 dark:border-zinc-800 bg-black aspect-video relative group">
+            <div className="rounded-2xl overflow-hidden shadow-lg border border-zinc-200 bg-black aspect-video relative group">
               <iframe
                 width="100%"
                 height="100%"
@@ -169,9 +166,9 @@ const AttachmentRenderer: React.FC<AttachmentRendererProps> = ({
         const faviconUrl = `https://www.google.com/s2/favicons?domain=${hostname}&sz=128`;
 
         return (
-          <div className="my-4 group relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-all hover:border-zinc-300 dark:hover:border-zinc-700">
+          <div className="my-4 group relative overflow-hidden rounded-xl border border-zinc-200 bg-white hover:bg-zinc-50 transition-all hover:border-zinc-300">
             <a href={attachment.url} target="_blank" rel="noopener noreferrer" className="flex items-stretch">
-              <div className="w-24 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0 border-r border-zinc-200 dark:border-zinc-800 relative overflow-hidden">
+              <div className="w-24 bg-zinc-100 flex items-center justify-center shrink-0 border-r border-zinc-200 relative overflow-hidden">
                 <img
                   src={faviconUrl}
                   alt=""
@@ -183,10 +180,10 @@ const AttachmentRenderer: React.FC<AttachmentRendererProps> = ({
                 </div>
               </div>
               <div className="flex-1 min-w-0 p-4 flex flex-col justify-center">
-                <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 truncate pr-6 mb-1">
+                <h4 className="text-sm font-bold text-zinc-900 truncate pr-6 mb-1">
                   {attachment.name && attachment.name !== 'Web Link' ? attachment.name : hostname}
                 </h4>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-1 mb-2 font-mono opacity-80">
+                <p className="text-xs text-zinc-500 line-clamp-1 mb-2 font-mono opacity-80">
                   {attachment.url}
                 </p>
                 <div className="flex items-center gap-2">
@@ -202,7 +199,7 @@ const AttachmentRenderer: React.FC<AttachmentRendererProps> = ({
         );
       } catch (e) {
         return (
-          <div className="my-4 p-4 bg-zinc-50 dark:bg-zinc-900 border border-red-200 dark:border-red-900/30 rounded-2xl flex items-center justify-between">
+          <div className="my-4 p-4 bg-zinc-50 border border-red-200 rounded-2xl flex items-center justify-between">
             <div className="flex items-center gap-4 text-red-500">
               <AlertTriangle size={20} />
               <span className="text-xs font-bold">Invalid Link: {attachment.url}</span>
@@ -212,9 +209,9 @@ const AttachmentRenderer: React.FC<AttachmentRendererProps> = ({
       }
     default:
       return (
-        <div className="my-4 p-4 flex items-center justify-between bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl group transition-all shadow-sm">
+        <div className="my-4 p-4 flex items-center justify-between bg-zinc-50 border border-zinc-200 rounded-2xl group transition-all shadow-sm">
           <div className="flex items-center gap-4 min-w-0">
-            <div className="p-3 bg-white dark:bg-zinc-800 rounded-xl text-zinc-400 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 transition-colors shadow-inner">
+            <div className="p-3 bg-white rounded-xl text-zinc-400 group-hover:text-zinc-900 transition-colors shadow-inner">
               <FileIcon size={24} />
             </div>
             <div className="min-w-0">
@@ -222,7 +219,7 @@ const AttachmentRenderer: React.FC<AttachmentRendererProps> = ({
               <div className="text-xs font-bold truncate">{attachment.name}</div>
             </div>
           </div>
-          <a href={attachment.url} download={attachment.name} className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-zinc-800 text-[10px] font-bold rounded-lg border border-zinc-200 dark:border-zinc-700 hover:shadow-md transition-all">
+          <a href={attachment.url} download={attachment.name} className="flex items-center gap-2 px-3 py-1.5 bg-white text-[10px] font-bold rounded-lg border border-zinc-200 hover:shadow-md transition-all">
             <Download size={14} /> Save
           </a>
         </div>

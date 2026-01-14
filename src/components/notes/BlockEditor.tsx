@@ -184,7 +184,7 @@ const BlockEditor = forwardRef<BlockEditorRef, BlockEditorProps>(({
               onDragOver={handleDragOver}
               onDragEnd={handleDragEnd}
               onDrop={(e) => handleDrop(e, index)}
-              className="group relative my-2 pl-6 pr-2 py-1 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-900/40 border border-transparent hover:border-zinc-200 dark:hover:border-zinc-800 transition-all cursor-grab active:cursor-grabbing"
+              className="group relative my-2 pl-6 pr-2 py-1 rounded-xl hover:bg-zinc-50 border border-transparent hover:border-zinc-200 transition-all cursor-grab active:cursor-grabbing"
             >
               <div className="absolute left-1 top-1/2 -translate-y-1/2 text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity">
                 <GripVertical size={16} />
@@ -192,7 +192,7 @@ const BlockEditor = forwardRef<BlockEditorRef, BlockEditorProps>(({
 
               <button
                 onClick={(e) => { e.stopPropagation(); removeBlock(index); }}
-                className="absolute right-2 top-2 p-1.5 bg-white/80 dark:bg-black/50 hover:bg-red-100 dark:hover:bg-red-900/50 text-zinc-400 hover:text-red-500 rounded-lg opacity-0 group-hover:opacity-100 transition-all z-10"
+                className="absolute right-2 top-2 p-1.5 bg-white/80 hover:bg-red-100 text-zinc-400 hover:text-red-500 rounded-lg opacity-0 group-hover:opacity-100 transition-all z-10"
                 title="Remove attachment"
               >
                 <X size={14} />
@@ -205,7 +205,7 @@ const BlockEditor = forwardRef<BlockEditorRef, BlockEditorProps>(({
                   onResize={(w) => onAttachmentResize(att.id, w)}
                 />
               ) : (
-                <div className="p-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-400 text-xs rounded-lg">
+                <div className="p-4 bg-zinc-100 text-zinc-400 text-xs rounded-lg">
                   Missing Attachment: {block.attachmentId}
                 </div>
               )}
@@ -219,7 +219,7 @@ const BlockEditor = forwardRef<BlockEditorRef, BlockEditorProps>(({
               onChange={(e) => updateBlockContent(index, e.target.value)}
               disabled={disabled}
               placeholder={index === 0 && blocks.length === 1 ? "Start capturing your thoughts..." : undefined}
-              className={`w-full bg-transparent border-none outline-none resize-none leading-relaxed text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-200 dark:placeholder:text-zinc-800 ${fontSizeClass} overflow-hidden`}
+              className={`w-full bg-transparent border-none outline-none resize-none leading-relaxed text-zinc-800 placeholder:text-zinc-200 ${fontSizeClass} overflow-hidden`}
               minHeight="1.5em"
             />
           );

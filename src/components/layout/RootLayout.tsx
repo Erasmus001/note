@@ -3,7 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useNotes } from '../../hooks/useNotes';
 import { useFolders } from '../../hooks/useFolders';
 import { useSettings } from '../../hooks/useSettings';
-import { Sidebar, OfflineBanner, FolderModal } from '..';
+import { Sidebar, OfflineBanner, FolderModal, DeleteConfirmModal, SettingsModal } from '..';
 import { ViewMode, Folder } from '../../../types';
 
 export const RootLayout = () => {
@@ -12,6 +12,8 @@ export const RootLayout = () => {
 
   const {
     notes,
+    ownedNotes,
+    sharedNotes,
     tagUsage,
     allTags,
     createNote,
@@ -29,14 +31,16 @@ export const RootLayout = () => {
   } = useNotes();
 
   const { folders, addFolder, deleteFolder, updateFolder } = useFolders();
-  const { settings, toggleTheme, setFontSize, setEditorWidth } = useSettings();
+  const { settings, setFontSize, setEditorWidth } = useSettings();
 
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderIcon, setNewFolderIcon] = useState("📁");
-  const [showSettings, setShowSettings] = useState(false); // Global settings modal state if needed here
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'appearance' | 'editor' | 'tags' | 'sync' | 'data'>('appearance');
+  const [folderToDelete, setFolderToDelete] = useState<Folder | null>(null);
 
   // Determine current view for Sidebar highlighting
   const currentView = React.useMemo(() => {
@@ -44,13 +48,14 @@ export const RootLayout = () => {
     if (path === '/' || path === '/notes') return { mode: ViewMode.All };
     if (path.startsWith('/starred')) return { mode: ViewMode.Starred };
     if (path.startsWith('/trash')) return { mode: ViewMode.Trash };
+    if (path.startsWith('/shared')) return { mode: ViewMode.Shared };
     if (path.startsWith('/folders/')) return { mode: ViewMode.Folder, id: path.split('/')[2] };
     if (path.startsWith('/tags/')) return { mode: ViewMode.Tag, id: decodeURIComponent(path.split('/')[2]) };
 
     return { mode: ViewMode.All };
   }, [location.pathname]);
 
-  // Folder management (Moved from App.tsx)
+  // Folder management
   const handleSaveFolder = () => {
     if (newFolderName.trim()) {
       if (editingFolder) {
@@ -69,17 +74,22 @@ export const RootLayout = () => {
   };
 
   const handleDeleteFolder = (folder: Folder) => {
-    const notesInFolder = notes.filter((n) => n.folderId === folder.id);
+    setFolderToDelete(folder);
+  };
 
-    deleteFolder(folder.id, notesInFolder.map((n) => n.id));
+  const confirmDeleteFolder = () => {
+    if (!folderToDelete) return;
+    const notesInFolder = notes.filter((n) => n.folderId === folderToDelete.id);
+    deleteFolder(folderToDelete.id, notesInFolder.map((n) => n.id));
 
-    if (currentView.mode === ViewMode.Folder && currentView.id === folder.id) {
+    if (currentView.mode === ViewMode.Folder && currentView.id === folderToDelete.id) {
       navigate('/notes');
     }
+    setFolderToDelete(null);
   };
 
   return (
-    <div className="flex h-screen w-full bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 transition-colors duration-200 overflow-hidden relative font-sans">
+    <div className="flex h-screen w-full bg-white text-zinc-900 overflow-hidden relative font-sans">
       <div className="absolute top-0 left-0 right-0 z-50">
         <OfflineBanner />
       </div>
@@ -89,21 +99,22 @@ export const RootLayout = () => {
         allTags={allTags}
         tagUsage={tagUsage}
         currentView={currentView}
-        settings={settings}
         isCollapsed={isSidebarCollapsed}
         onSetCollapsed={setIsSidebarCollapsed}
         onSetView={(view) => {
-          // Translation from ViewMode to URL
           switch (view.mode) {
             case ViewMode.All: navigate('/notes'); break;
             case ViewMode.Starred: navigate('/starred'); break;
             case ViewMode.Trash: navigate('/trash'); break;
+            case ViewMode.Shared: navigate('/shared'); break;
             case ViewMode.Folder: navigate(`/folders/${view.id}`); break;
             case ViewMode.Tag: navigate(`/tags/${view.id}`); break;
           }
         }}
-        onToggleTheme={toggleTheme}
-        onOpenSettings={() => setShowSettings(true)}
+        onOpenSettings={(tab) => {
+          setSettingsTab(tab || 'appearance');
+          setShowSettings(true);
+        }}
         onCreateFolder={() => {
           setEditingFolder(null);
           setNewFolderName("");
@@ -119,7 +130,7 @@ export const RootLayout = () => {
       />
 
       <Outlet context={{
-        notes, folders, settings,
+        notes, ownedNotes, sharedNotes, folders, settings,
         createNote, updateNote,
         toggleStar, togglePin, moveToTrash,
         restoreNote, deletePermanently, emptyTrash,
@@ -127,7 +138,7 @@ export const RootLayout = () => {
         renameGlobalTag, deleteGlobalTag,
         // UI Props
         showSettings, setShowSettings,
-        toggleTheme, setFontSize, setEditorWidth
+        setFontSize, setEditorWidth
       }} />
 
       <FolderModal
@@ -143,6 +154,25 @@ export const RootLayout = () => {
           setNewFolderName("");
         }}
         isEditing={!!editingFolder}
+      />
+
+      <DeleteConfirmModal
+        isOpen={!!folderToDelete}
+        title="Delete Folder"
+        message={`Are you sure you want to delete "${folderToDelete?.name}"? All ${notes.filter((n) => n.folderId === folderToDelete?.id).length} notes in this folder will be moved to trash.`}
+        confirmLabel="Delete Folder"
+        onConfirm={confirmDeleteFolder}
+        onCancel={() => setFolderToDelete(null)}
+      />
+
+      <SettingsModal
+        isOpen={showSettings}
+        activeTab={settingsTab}
+        settings={settings}
+        onClose={() => setShowSettings(false)}
+        onTabChange={setSettingsTab}
+        onSetFontSize={setFontSize}
+        onSetEditorWidth={setEditorWidth}
       />
     </div>
   );

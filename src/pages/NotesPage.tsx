@@ -5,8 +5,14 @@ import {
   RichTextEditor,
   RichTextEditorRef,
   UrlModal,
-  ImagePreviewModal
+  ImagePreviewModal,
+  DeleteConfirmModal,
+  ShareNoteModal,
+  CollaboratorAvatars,
+  TypingIndicator,
+  NoteCursors
 } from '../components';
+import { useCollaboration, useNotePresence } from '../hooks';
 import { processFiles, getYouTubeId, getTweetId } from '../utils';
 import {
   Plus,
@@ -20,7 +26,8 @@ import {
   Eye,
   X,
   Paperclip,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Share2
 } from 'lucide-react';
 import { Note, Attachment, ViewMode } from '../../types';
 
@@ -33,14 +40,19 @@ export const NotesPage = () => {
   const noteId = params.noteId;
   const folderId = params.folderId;
   const tagId = params.tagId;
+  const inviteToken = params.token;
 
   // Context from RootLayout
   const {
-    notes, folders, settings,
+    notes, folders, settings, sharedNotes,
     createNote: contextCreateNote, updateNote,
     toggleStar, togglePin, moveToTrash,
     restoreNote, deletePermanently, emptyTrash
   } = useOutletContext<any>();
+
+  // Collaboration hooks
+  const { acceptShareLink, sharedWithMe, canEdit } = useCollaboration();
+  const { onlinePeers, typingPeers, typingInputProps, myPresence } = useNotePresence(noteId || null);
 
   // Local state
   const [searchQuery, setSearchQuery] = useState("");
@@ -50,6 +62,16 @@ export const NotesPage = () => {
   const [newTagValue, setNewTagValue] = useState("");
   const [showUrlModal, setShowUrlModal] = useState(false);
   const [newUrlValue, setNewUrlValue] = useState("");
+
+  // Delete confirmation modal state
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean;
+    type: 'note' | 'trash';
+    noteId?: string;
+  }>({ isOpen: false, type: 'note' });
+
+  // Share modal state
+  const [showShareModal, setShowShareModal] = useState(false);
 
   const tagInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -61,6 +83,7 @@ export const NotesPage = () => {
 
     if (path.startsWith('/starred')) return { mode: ViewMode.Starred };
     if (path.startsWith('/trash')) return { mode: ViewMode.Trash };
+    if (path.startsWith('/shared')) return { mode: ViewMode.Shared };
     if (path.startsWith('/folders/')) return { mode: ViewMode.Folder, id: folderId };
     if (path.startsWith('/tags/')) return { mode: ViewMode.Tag, id: tagId };
 
@@ -76,6 +99,9 @@ export const NotesPage = () => {
       result = result.filter((n: Note) => n.isStarred && !n.isTrashed);
     else if (currentView.mode === ViewMode.Trash)
       result = result.filter((n: Note) => n.isTrashed);
+    else if (currentView.mode === ViewMode.Shared)
+      // Filter to only show notes that were shared with me (not owned by me)
+      result = (sharedNotes || []).filter((n: Note) => !n.isTrashed);
     else if (currentView.mode === ViewMode.Folder)
       result = result.filter((n: Note) => n.folderId === currentView.id && !n.isTrashed);
     else if (currentView.mode === ViewMode.Tag)
@@ -134,6 +160,7 @@ export const NotesPage = () => {
     let path = `/notes/${id}`;
     if (currentView.mode === ViewMode.Starred) path = `/starred/${id}`;
     else if (currentView.mode === ViewMode.Trash) path = `/trash/${id}`;
+    else if (currentView.mode === ViewMode.Shared) path = `/shared/${id}`;
     else if (currentView.mode === ViewMode.Folder) path = `/folders/${currentView.id}/${id}`;
     else if (currentView.mode === ViewMode.Tag) path = `/tags/${currentView.id}/${id}`;
 
@@ -219,6 +246,24 @@ export const NotesPage = () => {
     if (isAddingTag && tagInputRef.current) tagInputRef.current.focus();
   }, [isAddingTag]);
 
+  // Handle invite token acceptance
+  useEffect(() => {
+    const handleInvite = async () => {
+      if (inviteToken) {
+        try {
+          const result = await acceptShareLink(inviteToken);
+          if (result) {
+            navigate(`/shared/${result.noteId}`);
+          }
+        } catch (err) {
+          console.error('Failed to accept invite:', err);
+          navigate('/notes');
+        }
+      }
+    };
+    handleInvite();
+  }, [inviteToken, acceptShareLink, navigate]);
+
   return (
     <>
       <NoteExplorer
@@ -230,14 +275,14 @@ export const NotesPage = () => {
         onSearchChange={setSearchQuery}
         onSelectNote={handleSelectNote}
         onCreateNote={handleCreateNote}
-        onEmptyTrash={emptyTrash}
+        onEmptyTrash={() => setDeleteModal({ isOpen: true, type: 'trash' })}
       />
 
-      <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-950">
+      <main className="flex-1 flex flex-col min-w-0 bg-white">
         {activeNote ? (
           <>
             {activeNote.isTrashed && (
-              <div className="bg-zinc-100 dark:bg-zinc-900 border-b px-6 py-3 flex items-center justify-between shrink-0">
+              <div className="bg-zinc-100 border-b px-6 py-3 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3 text-zinc-500 text-sm">
                   <AlertTriangle className="text-amber-500" size={18} />
                   <span>This note is in the trash.</span>
@@ -245,15 +290,12 @@ export const NotesPage = () => {
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => restoreNote(activeNote.id)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-zinc-800 text-xs font-bold rounded-lg border text-green-600"
+                    className="flex items-center gap-2 px-3 py-1.5 bg-white text-xs font-bold rounded-lg border text-green-600"
                   >
                     <RefreshCw size={14} /> Restore
                   </button>
                   <button
-                    onClick={() => {
-                      deletePermanently(activeNote.id);
-                      navigate('/trash');
-                    }}
+                    onClick={() => setDeleteModal({ isOpen: true, type: 'note', noteId: activeNote.id })}
                     className="flex items-center gap-2 px-3 py-1.5 bg-red-50 text-xs font-bold rounded-lg border text-red-600"
                   >
                     <Trash2 size={14} /> Delete Forever
@@ -269,11 +311,18 @@ export const NotesPage = () => {
                     ? folders.find((f: any) => f.id === activeNote.folderId)?.name
                     : "Drafts"}
                 </span>
-                <div className="w-px h-3 bg-zinc-200 dark:bg-zinc-800" />
+                <div className="w-px h-3 bg-zinc-200" />
                 {/* Save status is tricky without passing it from hook. We can just show "Saved" effectively */}
                 <div className="text-green-500 flex items-center gap-1">
                   <CheckCircle2 size={12} /> Saved
                 </div>
+                {/* Show online collaborators */}
+                {onlinePeers.length > 0 && (
+                  <>
+                    <div className="w-px h-3 bg-zinc-200" />
+                    <CollaboratorAvatars peers={onlinePeers} maxVisible={3} />
+                  </>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 {!activeNote.isTrashed && (
@@ -287,171 +336,188 @@ export const NotesPage = () => {
                         fill={activeNote.isStarred ? "currentColor" : "none"}
                       />
                     </button>
-                    <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-800" />
+                    <div className="w-px h-4 bg-zinc-200" />
                   </>
                 )}
                 <button
                   onClick={() => setIsPreviewMode(!isPreviewMode)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold ${isPreviewMode ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900" : "text-zinc-500"}`}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold ${isPreviewMode ? "bg-zinc-900 text-white" : "text-zinc-500"}`}
                 >
                   {isPreviewMode ? <Edit3 size={14} /> : <Eye size={14} />}
                   {isPreviewMode ? "Edit" : "Read Mode"}
                 </button>
                 {!activeNote.isTrashed && (
-                  <button
-                    onClick={() => {
-                      moveToTrash(activeNote.id);
-                      navigate('/notes'); // back to list
-                    }}
-                    className="p-2 hover:text-red-500 text-zinc-400"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setShowShareModal(true)}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold text-zinc-500 hover:bg-zinc-100 transition-colors"
+                    >
+                      <Share2 size={14} /> Share
+                    </button>
+                    <button
+                      onClick={() => {
+                        moveToTrash(activeNote.id);
+                        navigate('/notes'); // back to list
+                      }}
+                      className="p-2 hover:text-red-500 text-zinc-400"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </>
                 )}
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-6 py-12 md:px-12 relative">
-              <div className={`mx-auto ${editorWidthClass} space-y-8 pb-32`}>
-                {!isPreviewMode ? (
-                  <>
-                    <input
-                      type="text"
-                      value={activeNote.title}
-                      onChange={(e) =>
-                        updateNote(activeNote.id, { title: e.target.value })
-                      }
-                      disabled={activeNote.isTrashed}
-                      placeholder="Note Title..."
-                      className="w-full text-4xl md:text-5xl font-extrabold bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-200 dark:placeholder:text-zinc-800"
-                    />
-                    <div className="flex flex-wrap gap-4 items-center">
-                      <div className="flex flex-wrap gap-2 items-center border-r border-zinc-200 dark:border-zinc-800 pr-4">
-                        {activeNote.tags.map((t: string) => (
-                          <span
-                            key={t}
-                            className="px-2 py-0.5 bg-zinc-100 dark:bg-zinc-900 text-zinc-500 text-[10px] font-bold rounded-full flex items-center gap-1 group/tag"
-                          >
-                            #{t}
-                            {!activeNote.isTrashed && (
-                              <button
-                                onClick={() =>
-                                  updateNote(activeNote.id, {
-                                    tags: activeNote.tags.filter(
-                                      (tag: string) => tag !== t,
-                                    ),
-                                  })
-                                }
-                                className="hover:text-red-500 opacity-0 group-hover/tag:opacity-100"
-                              >
-                                <X size={10} />
-                              </button>
-                            )}
-                          </span>
-                        ))}
-                        {!activeNote.isTrashed &&
-                          (isAddingTag ? (
-                            <input
-                              ref={tagInputRef}
-                              type="text"
-                              value={newTagValue}
-                              onChange={(e) => setNewTagValue(e.target.value)}
-                              onKeyDown={(e) =>
-                                e.key === "Enter" && handleAddTag()
-                              }
-                              onBlur={handleAddTag}
-                              placeholder="..."
-                              className="px-2 bg-transparent border-b border-zinc-300 dark:border-zinc-700 outline-none w-16 text-[10px]"
-                            />
-                          ) : (
-                            <button
-                              onClick={() => setIsAddingTag(true)}
-                              className="px-2 py-0.5 border border-dashed border-zinc-200 dark:border-zinc-800 text-zinc-400 text-[10px] rounded-full"
+            {/* Typing indicator */}
+            {typingPeers.length > 0 && (
+              <TypingIndicator typingPeers={typingPeers} />
+            )}
+
+            <NoteCursors noteId={activeNote.id} userColor={myPresence?.color}>
+              <div className="flex-1 overflow-y-auto px-6 py-12 md:px-12 relative">
+                <div className={`mx-auto ${editorWidthClass} space-y-8 pb-32`}>
+                  {!isPreviewMode ? (
+                    <>
+                      <input
+                        type="text"
+                        value={activeNote.title}
+                        onChange={(e) =>
+                          updateNote(activeNote.id, { title: e.target.value })
+                        }
+                        onKeyDown={typingInputProps.onKeyDown}
+                        onBlur={typingInputProps.onBlur}
+                        disabled={activeNote.isTrashed}
+                        placeholder="Note Title..."
+                        className="w-full text-4xl md:text-5xl font-extrabold bg-transparent border-none outline-none text-zinc-900 placeholder:text-zinc-200"
+                      />
+                      <div className="flex flex-wrap gap-4 items-center">
+                        <div className="flex flex-wrap gap-2 items-center border-r border-zinc-200 pr-4">
+                          {activeNote.tags.map((t: string) => (
+                            <span
+                              key={t}
+                              className="px-2 py-0.5 bg-zinc-100 text-zinc-500 text-[10px] font-bold rounded-full flex items-center gap-1 group/tag"
                             >
-                              <Plus size={10} /> Tag
-                            </button>
+                              #{t}
+                              {!activeNote.isTrashed && (
+                                <button
+                                  onClick={() =>
+                                    updateNote(activeNote.id, {
+                                      tags: activeNote.tags.filter(
+                                        (tag: string) => tag !== t,
+                                      ),
+                                    })
+                                  }
+                                  className="hover:text-red-500 opacity-0 group-hover/tag:opacity-100"
+                                >
+                                  <X size={10} />
+                                </button>
+                              )}
+                            </span>
                           ))}
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <button
-                          onClick={() =>
-                            !activeNote.isTrashed &&
-                            fileInputRef.current?.click()
-                          }
-                          className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 disabled:opacity-30"
-                        >
-                          <Paperclip size={14} /> Add File
-                        </button>
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          multiple
-                          className="hidden"
-                          onChange={async (e) => {
-                            const files = Array.from(e.target.files || []);
-                            if (files.length > 0) {
-                              const attachments = await processFiles(files);
-                              attachments.forEach(att => addAttachment(activeNote.id, att));
-                              if (editorRef.current) {
-                                editorRef.current.insertAttachmentBlocks(attachments);
-                              }
+                          {!activeNote.isTrashed &&
+                            (isAddingTag ? (
+                              <input
+                                ref={tagInputRef}
+                                type="text"
+                                value={newTagValue}
+                                onChange={(e) => setNewTagValue(e.target.value)}
+                                onKeyDown={(e) =>
+                                  e.key === "Enter" && handleAddTag()
+                                }
+                                onBlur={handleAddTag}
+                                placeholder="..."
+                                className="px-2 bg-transparent border-b border-zinc-300 outline-none w-16 text-[10px]"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => setIsAddingTag(true)}
+                                className="px-2 py-0.5 border border-dashed border-zinc-200 text-zinc-400 text-[10px] rounded-full"
+                              >
+                                <Plus size={10} /> Tag
+                              </button>
+                            ))}
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <button
+                            onClick={() =>
+                              !activeNote.isTrashed &&
+                              fileInputRef.current?.click()
                             }
-                            e.target.value = "";
-                          }}
-                        />
-                        <button
-                          onClick={() =>
-                            !activeNote.isTrashed && setShowUrlModal(true)
-                          }
-                          className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 disabled:opacity-30"
-                        >
-                          <LinkIcon size={14} /> Web Link
-                        </button>
+                            className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-zinc-900 disabled:opacity-30"
+                          >
+                            <Paperclip size={14} /> Add File
+                          </button>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            multiple
+                            className="hidden"
+                            onChange={async (e) => {
+                              const files = Array.from(e.target.files || []);
+                              if (files.length > 0) {
+                                const attachments = await processFiles(files);
+                                attachments.forEach(att => addAttachment(activeNote.id, att));
+                                if (editorRef.current) {
+                                  editorRef.current.insertAttachmentBlocks(attachments);
+                                }
+                              }
+                              e.target.value = "";
+                            }}
+                          />
+                          <button
+                            onClick={() =>
+                              !activeNote.isTrashed && setShowUrlModal(true)
+                            }
+                            className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-zinc-900 disabled:opacity-30"
+                          >
+                            <LinkIcon size={14} /> Web Link
+                          </button>
+                        </div>
                       </div>
+                      <RichTextEditor
+                        ref={editorRef}
+                        content={activeNote.content}
+                        jsonContent={activeNote.jsonContent}
+                        attachments={activeNote.attachments}
+                        onUpdate={({ text, json }) =>
+                          updateNote(activeNote.id, { content: text, jsonContent: json })
+                        }
+                        onImageClick={setSelectedPreviewImage}
+                        onAttachmentResize={(attId, width) =>
+                          resizeAttachment(activeNote.id, attId, width)
+                        }
+                        fontSizeClass={fontSizeClass}
+                        disabled={activeNote.isTrashed}
+                      />
+                    </>
+                  ) : (
+                    <div className="space-y-8">
+                      <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-zinc-900 pb-6 border-b border-zinc-100">
+                        {activeNote.title || 'Untitled Note'}
+                      </h1>
+                      <RichTextEditor
+                        content={activeNote.content}
+                        jsonContent={activeNote.jsonContent}
+                        attachments={activeNote.attachments}
+                        onUpdate={() => { }} // Read only
+                        onImageClick={setSelectedPreviewImage}
+                        onAttachmentResize={() => { }}
+                        fontSizeClass={fontSizeClass}
+                        disabled={true}
+                      />
                     </div>
-                    <RichTextEditor
-                      ref={editorRef}
-                      content={activeNote.content}
-                      jsonContent={activeNote.jsonContent}
-                      attachments={activeNote.attachments}
-                      onUpdate={({ text, json }) =>
-                        updateNote(activeNote.id, { content: text, jsonContent: json })
-                      }
-                      onImageClick={setSelectedPreviewImage}
-                      onAttachmentResize={(attId, width) =>
-                        resizeAttachment(activeNote.id, attId, width)
-                      }
-                      fontSizeClass={fontSizeClass}
-                      disabled={activeNote.isTrashed}
-                    />
-                  </>
-                ) : (
-                  <div className="space-y-8">
-                    <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-100 pb-6 border-b border-zinc-100 dark:border-zinc-900">
-                      {activeNote.title || 'Untitled Note'}
-                    </h1>
-                    <RichTextEditor
-                      content={activeNote.content}
-                      jsonContent={activeNote.jsonContent}
-                      attachments={activeNote.attachments}
-                      onUpdate={() => { }} // Read only
-                      onImageClick={setSelectedPreviewImage}
-                      onAttachmentResize={() => { }}
-                      fontSizeClass={fontSizeClass}
-                      disabled={true}
-                    />
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
+            </NoteCursors>
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-zinc-400 space-y-6">
-            <div className="p-8 bg-zinc-50 dark:bg-zinc-900 rounded-full">
+            <div className="p-8 bg-zinc-50 rounded-full">
               <FileText size={64} strokeWidth={1} />
             </div>
             <div className="text-center italic">
-              <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">
+              <h2 className="text-xl font-bold text-zinc-900 mb-2">
                 Private workspace
               </h2>
               <p className="text-sm">
@@ -460,7 +526,7 @@ export const NotesPage = () => {
             </div>
             <button
               onClick={handleCreateNote}
-              className="px-8 py-3 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-full font-bold hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shadow-xl"
+              className="px-8 py-3 bg-zinc-900 text-white rounded-full font-bold hover:scale-105 active:scale-95 transition-all flex items-center gap-2 shadow-xl"
             >
               <Plus size={20} /> New Note
             </button>
@@ -482,6 +548,36 @@ export const NotesPage = () => {
         onAdd={handleAddUrl}
         onClose={() => setShowUrlModal(false)}
       />
+
+      <DeleteConfirmModal
+        isOpen={deleteModal.isOpen}
+        title={deleteModal.type === 'trash' ? 'Empty Trash' : 'Delete Note'}
+        message={
+          deleteModal.type === 'trash'
+            ? `Are you sure you want to permanently delete ${filteredNotes.length} notes? This cannot be undone.`
+            : 'Are you sure you want to delete this note permanently? This action cannot be undone.'
+        }
+        confirmLabel={deleteModal.type === 'trash' ? 'Empty Trash' : 'Delete Forever'}
+        onConfirm={() => {
+          if (deleteModal.type === 'trash') {
+            emptyTrash();
+          } else if (deleteModal.noteId) {
+            deletePermanently(deleteModal.noteId);
+            navigate('/trash');
+          }
+          setDeleteModal({ isOpen: false, type: 'note' });
+        }}
+        onCancel={() => setDeleteModal({ isOpen: false, type: 'note' })}
+      />
+
+      {activeNote && (
+        <ShareNoteModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          noteId={activeNote.id}
+          noteTitle={activeNote.title}
+        />
+      )}
     </>
   );
 };

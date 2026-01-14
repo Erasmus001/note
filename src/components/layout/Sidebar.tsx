@@ -6,12 +6,11 @@ import {
   Settings as SettingsIcon,
   Plus,
   Tag,
-  Sun,
-  Moon,
   Menu,
   Pencil,
+  Users,
 } from "lucide-react";
-import { Folder, ViewMode, AppSettings } from "../../../types";
+import { Folder, ViewMode } from "../../../types";
 import SidebarNavItem from "./SidebarNavItem";
 import { UserButton } from "@clerk/clerk-react";
 
@@ -20,11 +19,9 @@ interface SidebarProps {
   allTags: string[];
   tagUsage: Record<string, number>;
   currentView: { mode: ViewMode; id?: string };
-  settings: AppSettings;
   isCollapsed: boolean;
   onSetCollapsed: (collapsed: boolean) => void;
   onSetView: (view: { mode: ViewMode; id?: string }) => void;
-  onToggleTheme: () => void;
   onOpenSettings: (
     tab?: "appearance" | "editor" | "tags" | "sync" | "data",
   ) => void;
@@ -41,11 +38,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   allTags,
   tagUsage,
   currentView,
-  settings,
   isCollapsed,
   onSetCollapsed,
   onSetView,
-  onToggleTheme,
   onOpenSettings,
   onCreateFolder,
   onRenameFolder,
@@ -53,7 +48,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   return (
     <aside
-      className={`${isCollapsed ? "w-16" : "w-64"} hidden md:flex flex-col border-r border-zinc-200 dark:border-zinc-800 transition-all duration-200 shrink-0 bg-white dark:bg-zinc-950`}
+      className={`${isCollapsed ? "w-16" : "w-64"} hidden md:flex flex-col border-r border-zinc-200 transition-all duration-200 shrink-0 bg-white`}
     >
       <div className="p-4 flex items-center justify-between shrink-0">
         {!isCollapsed && (
@@ -63,7 +58,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
         <button
           onClick={() => onSetCollapsed(!isCollapsed)}
-          className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-zinc-500"
+          className="p-1 hover:bg-zinc-100 rounded text-zinc-500"
         >
           <Menu size={18} />
         </button>
@@ -91,6 +86,13 @@ const Sidebar: React.FC<SidebarProps> = ({
           collapsed={isCollapsed}
           to="/trash"
         />
+        <SidebarNavItem
+          icon={<Users size={18} />}
+          label="Shared with me"
+          active={currentView.mode === ViewMode.Shared}
+          collapsed={isCollapsed}
+          to="/shared"
+        />
 
         {!isCollapsed && (
           <>
@@ -102,7 +104,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   e.stopPropagation();
                   onCreateFolder();
                 }}
-                className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                className="p-1 hover:bg-zinc-100 rounded text-zinc-500 hover:text-zinc-900 transition-colors"
                 title="Create New Folder"
               >
                 <Plus size={14} />
@@ -139,7 +141,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   e.stopPropagation();
                   onOpenSettings("tags");
                 }}
-                className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                className="p-1 hover:bg-zinc-100 rounded text-zinc-500 hover:text-zinc-900 transition-colors"
                 title="Manage Tags"
               >
                 <SettingsIcon size={14} />
@@ -162,28 +164,17 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
       </nav>
 
-      <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
+      <div className="p-4 border-t border-zinc-200 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1">
           <button
-            onClick={onToggleTheme}
-            className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors"
-            title="Toggle Theme"
-          >
-            {settings.theme === "light" ? (
-              <Moon size={20} />
-            ) : (
-              <Sun size={20} />
-            )}
-          </button>
-          <button
             onClick={() => onOpenSettings("appearance")}
-            className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors"
+            className="p-2 hover:bg-zinc-100 rounded-lg text-zinc-500 transition-colors"
             title="Open Settings"
           >
             <SettingsIcon size={20} />
           </button>
         </div>
-        <div className="pl-2 border-l border-zinc-200 dark:border-zinc-800">
+        <div className="pl-2 border-l border-zinc-200">
           <UserButton
             afterSignOutUrl="/"
             appearance={{

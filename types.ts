@@ -37,10 +37,42 @@ export enum ViewMode {
   Trash = "trash",
   Tag = "tag",
   Folder = "folder",
+  Shared = "shared", // Notes shared with me
 }
 
 export interface AppSettings {
-  theme: "light" | "dark";
+  theme: "light";
   fontSize: "sm" | "base" | "lg";
   editorWidth: "narrow" | "standard" | "full";
+}
+
+// Collaboration types
+export type Permission = "view" | "edit";
+
+export interface Collaborator {
+  id: string;
+  noteId: string;
+  ownerId: string;
+  collaboratorId: string;
+  collaboratorEmail: string;
+  collaboratorName: string;
+  permission: Permission;
+  createdAt: number;
+}
+
+export interface ShareLink {
+  id: string;
+  noteId: string;
+  ownerId: string;
+  token: string;
+  permission: Permission;
+  expiresAt: number; // 0 = never expires
+  isActive: boolean;
+  createdAt: number;
+}
+
+export interface PresenceUser {
+  name: string;
+  email: string;
+  color: string;
 }

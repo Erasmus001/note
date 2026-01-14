@@ -19,3 +19,13 @@ export { default as OfflineBanner } from "./ui/OfflineBanner";
 export { default as ImagePreviewModal } from "./modals/ImagePreviewModal";
 export { default as FolderModal } from "./modals/FolderModal";
 export { default as UrlModal } from "./modals/UrlModal";
+export { default as DeleteConfirmModal } from "./modals/DeleteConfirmModal";
+export { ShareNoteModal } from "./modals/ShareNoteModal";
+export { default as SettingsModal } from "./modals/SettingsModal";
+
+// Collaboration components
+export {
+  CollaboratorAvatars,
+  TypingIndicator,
+  NoteCursors,
+} from "./collaboration";

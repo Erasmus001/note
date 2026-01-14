@@ -15,16 +15,16 @@ const NoteListItem: React.FC<NoteListItemProps> = React.memo(
   ({ note, active, onClick }) => (
     <div
       onClick={onClick}
-      className={`group p-4 border-b border-zinc-100 dark:border-zinc-900 cursor-pointer transition-colors relative ${active
-          ? "bg-zinc-50 dark:bg-zinc-900"
-          : "hover:bg-zinc-50/50 dark:hover:bg-zinc-900/50"
+      className={`group p-4 border-b border-zinc-100 cursor-pointer transition-colors relative ${active
+        ? "bg-zinc-50"
+        : "hover:bg-zinc-50/50"
         }`}
     >
       <div className="flex items-start justify-between mb-1">
         <h3
           className={`font-bold text-sm truncate pr-4 ${active
-              ? "text-zinc-900 dark:text-white"
-              : "text-zinc-700 dark:text-zinc-300"
+            ? "text-zinc-900"
+            : "text-zinc-700"
             } ${note.isTrashed ? "italic opacity-60" : ""}`}
         >
           {note.title || "Untitled"}
@@ -52,7 +52,7 @@ const NoteListItem: React.FC<NoteListItemProps> = React.memo(
           {note.tags.slice(0, 1).map((t) => (
             <span
               key={t}
-              className="text-[9px] px-1.5 py-0.5 bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 rounded-sm font-bold"
+              className="text-[9px] px-1.5 py-0.5 bg-zinc-200 text-zinc-600 rounded-sm font-bold"
             >
               #{t}
             </span>
@@ -66,7 +66,7 @@ const NoteListItem: React.FC<NoteListItemProps> = React.memo(
         </span>
       </div>
       {active && (
-        <div className="absolute left-0 top-0 bottom-0 w-1 bg-zinc-900 dark:bg-zinc-100" />
+        <div className="absolute left-0 top-0 bottom-0 w-1 bg-zinc-900" />
       )}
     </div>
   ),

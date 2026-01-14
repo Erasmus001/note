@@ -62,10 +62,13 @@ const App: React.FC = () => {
             <Route path="/starred/:noteId" element={<NotesPage />} />
             <Route path="/trash" element={<NotesPage />} />
             <Route path="/trash/:noteId" element={<NotesPage />} />
+            <Route path="/shared" element={<NotesPage />} />
+            <Route path="/shared/:noteId" element={<NotesPage />} />
             <Route path="/folders/:folderId" element={<NotesPage />} />
             <Route path="/folders/:folderId/:noteId" element={<NotesPage />} />
             <Route path="/tags/:tagId" element={<NotesPage />} />
             <Route path="/tags/:tagId/:noteId" element={<NotesPage />} />
+            <Route path="/invite/:token" element={<NotesPage />} />
             {/* Catch-all */}
             <Route path="*" element={<Navigate to="/notes" replace />} />
           </Route>

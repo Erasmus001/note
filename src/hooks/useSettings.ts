@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useCallback } from "react";
+import { useMemo, useCallback } from "react";
 import { useUser } from "@clerk/clerk-react";
 import { AppSettings } from "../../types";
 import { db, id } from "../lib/db";
 
 const DEFAULT_SETTINGS: AppSettings = {
-  theme: "dark",
+  theme: "light",
   fontSize: "base",
   editorWidth: "standard",
 };
@@ -23,15 +23,6 @@ export const useSettings = () => {
     // @ts-ignore
     return data.settings[0] as AppSettings;
   }, [data]);
-
-  // Apply theme on settings change
-  useEffect(() => {
-    if (settings.theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  }, [settings.theme]);
 
   const updateSettings = useCallback(
     (updates: Partial<AppSettings>) => {
@@ -54,12 +45,6 @@ export const useSettings = () => {
     [userId, data],
   );
 
-  const toggleTheme = useCallback(() => {
-    updateSettings({
-      theme: settings.theme === "light" ? "dark" : "light",
-    });
-  }, [settings.theme, updateSettings]);
-
   const setFontSize = useCallback(
     (fontSize: AppSettings["fontSize"]) => {
       updateSettings({ fontSize });
@@ -78,7 +63,6 @@ export const useSettings = () => {
     settings,
     isLoading,
     error,
-    toggleTheme,
     setFontSize,
     setEditorWidth,
     updateSettings,

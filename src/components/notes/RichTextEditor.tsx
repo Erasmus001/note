@@ -252,7 +252,7 @@ const RichTextEditor = forwardRef<RichTextEditorRef, RichTextEditorProps>(({
 
   return (
     <div
-      className={`prose dark:prose-invert max-w-none ${fontSizeClass} ${disabled ? 'opacity-50 pointer-events-none' : ''}`}
+      className={`prose max-w-none ${fontSizeClass} ${disabled ? 'opacity-50 pointer-events-none' : ''}`}
     >
       <div ref={containerRef} className="min-h-[60vh] pb-32" />
       <style>{`

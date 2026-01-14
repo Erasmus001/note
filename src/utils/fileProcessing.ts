@@ -14,9 +14,11 @@ export const processFiles = async (files: File[]): Promise<Attachment[]> => {
       }
       return new Promise<Attachment>((resolve) => {
         const reader = new FileReader();
+
         reader.onload = (event) => {
           const base64 = event.target?.result as string;
           let type: Attachment["type"] = "document";
+
           if (file.type.startsWith("audio/")) type = "audio";
           else if (file.type.startsWith("video/")) type = "video";
           else if (file.type.startsWith("image/")) type = "image";
@@ -24,6 +26,7 @@ export const processFiles = async (files: File[]): Promise<Attachment[]> => {
           const id = `att-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
           resolve({ id, name: file.name, type, url: base64, size: file.size });
         };
+
         reader.onerror = () =>
           resolve({
             id: `err-${Date.now()}`,
@@ -31,6 +34,7 @@ export const processFiles = async (files: File[]): Promise<Attachment[]> => {
             type: "document",
             url: "",
           });
+
         reader.readAsDataURL(file);
       });
     }),

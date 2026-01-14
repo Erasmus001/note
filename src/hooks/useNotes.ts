@@ -1,21 +1,71 @@
-import { useState, useMemo, useCallback } from "react";
+import { useMemo, useCallback } from "react";
 import { useUser } from "@clerk/clerk-react";
-import { Note, ViewMode, Attachment } from "../../types";
+import { Note, Attachment, Collaborator } from "../../types";
 import { db, id } from "../lib/db";
 
 export const useNotes = () => {
   const { user } = useUser();
   const userId = user?.id;
 
-  // Read data from InstantDB
-  const { isLoading, error, data } = db.useQuery(
-    userId ? { notes: { $: { where: { userId } } } } : null,
+  // Read owned notes from InstantDB
+  const {
+    isLoading: isLoadingOwned,
+    error: ownedError,
+    data,
+  } = db.useQuery(userId ? { notes: { $: { where: { userId } } } } : null);
+
+  // Read notes shared with me (via collaborators table)
+  const { isLoading: isLoadingShared, data: collabData } = db.useQuery(
+    userId
+      ? { collaborators: { $: { where: { collaboratorId: userId } } } }
+      : null,
   );
 
+  // Get shared note IDs
+  const sharedNoteIds = useMemo(() => {
+    if (!collabData?.collaborators) return [];
+    return (collabData.collaborators as Collaborator[]).map((c) => c.noteId);
+  }, [collabData]);
+
+  // Query shared notes by their IDs
+  const { isLoading: isLoadingSharedNotes, data: sharedNotesData } =
+    db.useQuery(
+      sharedNoteIds.length > 0
+        ? { notes: { $: { where: { id: { $in: sharedNoteIds } } } } }
+        : null,
+    );
+
+  // Combine owned and shared notes
   const notes = useMemo(() => {
+    const ownedNotes = data?.notes ? (data.notes as Note[]) : [];
+    const sharedNotes = sharedNotesData?.notes
+      ? (sharedNotesData.notes as Note[])
+      : [];
+
+    // Merge, avoiding duplicates
+    const allNotes = [...ownedNotes];
+    sharedNotes.forEach((shared) => {
+      if (!allNotes.find((n) => n.id === shared.id)) {
+        allNotes.push(shared);
+      }
+    });
+
+    return allNotes;
+  }, [data, sharedNotesData]);
+
+  // Separate owned and shared notes
+  const ownedNotes = useMemo(() => {
     if (!data?.notes) return [];
     return data.notes as Note[];
   }, [data]);
+
+  const sharedNotes = useMemo(() => {
+    if (!sharedNotesData?.notes) return [];
+    return sharedNotesData.notes as Note[];
+  }, [sharedNotesData]);
+
+  const isLoading = isLoadingOwned || isLoadingShared || isLoadingSharedNotes;
+  const error = ownedError;
 
   // No internal activeNoteId state
   // No internal filtering
@@ -108,20 +158,12 @@ export const useNotes = () => {
   );
 
   const deletePermanently = useCallback((noteId: string) => {
-    if (!confirm("Are you sure you want to delete this note permanently?"))
-      return;
     db.transact(db.tx.notes[noteId].delete());
   }, []);
 
   const emptyTrash = useCallback(() => {
     const trashedNotes = notes.filter((n) => n.isTrashed);
     if (trashedNotes.length === 0) return;
-    if (
-      !confirm(
-        `Are you sure you want to permanently delete ${trashedNotes.length} notes? This cannot be undone.`,
-      )
-    )
-      return;
     const txs = trashedNotes.map((n) => db.tx.notes[n.id].delete());
     db.transact(txs);
   }, [notes]);
@@ -182,6 +224,8 @@ export const useNotes = () => {
 
   return {
     notes,
+    ownedNotes,
+    sharedNotes,
     isLoading,
     error,
     saveStatus: isLoading ? "saving" : error ? "error" : "saved",

@@ -31,8 +31,8 @@ const SidebarNavItem: React.FC<SidebarNavItemProps> = React.memo(({
   const content = (
     <div
       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${active
-        ? 'bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-bold shadow-sm'
-        : 'text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-900/50'
+        ? 'bg-zinc-100 text-zinc-900 font-bold shadow-sm'
+        : 'text-zinc-500 hover:bg-zinc-50'
         }`}
     >
       <span className="shrink-0">{icon}</span>
@@ -62,7 +62,7 @@ const SidebarNavItem: React.FC<SidebarNavItemProps> = React.memo(({
                 action.onClick(e);
               }}
               title={action.title}
-              className={`p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors ${action.className || ''}`}
+              className={`p-1 hover:bg-zinc-200 rounded text-zinc-400 hover:text-zinc-900 transition-colors ${action.className || ''}`}
             >
               {action.icon}
             </button>

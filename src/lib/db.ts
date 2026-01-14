@@ -39,12 +39,49 @@ const schema = i.schema({
       editorWidth: i.string(),
       updatedAt: i.number(),
     }),
+    // Collaboration: tracks who has access to which notes
+    collaborators: i.entity({
+      noteId: i.string(),
+      ownerId: i.string(), // Note owner's userId
+      collaboratorId: i.string(), // Collaborator's userId
+      collaboratorEmail: i.string(), // For display/lookup
+      collaboratorName: i.string(), // Display name
+      permission: i.string(), // "view" | "edit"
+      createdAt: i.number(),
+    }),
+    // Shareable invite links for notes
+    shareLinks: i.entity({
+      noteId: i.string(),
+      ownerId: i.string(),
+      token: i.string(), // Unique token for the link
+      permission: i.string(), // "view" | "edit"
+      expiresAt: i.number(), // 0 = never expires
+      isActive: i.boolean(),
+      createdAt: i.number(),
+    }),
+  },
+  // Room schema for real-time collaboration features
+  rooms: {
+    note: {
+      presence: i.entity({
+        name: i.string(),
+        email: i.string(),
+        color: i.string(),
+      }),
+      topics: {
+        typing: i.entity({
+          isTyping: i.boolean(),
+        }),
+      },
+    },
   },
 });
 
 export type DbNote = InstaQLEntity<typeof schema, "notes">;
 export type DbFolder = InstaQLEntity<typeof schema, "folders">;
 export type DbSettings = InstaQLEntity<typeof schema, "settings">;
+export type DbCollaborator = InstaQLEntity<typeof schema, "collaborators">;
+export type DbShareLink = InstaQLEntity<typeof schema, "shareLinks">;
 
 export const db = init({ appId: APP_ID, schema });
 export { id };
