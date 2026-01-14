@@ -12,6 +12,7 @@ interface NoteExplorerProps {
   onSearchChange: (query: string) => void;
   onSelectNote: (id: string) => void;
   onCreateNote: () => void;
+  onEmptyTrash?: () => void;
 }
 
 /**
@@ -25,7 +26,8 @@ const NoteExplorer: React.FC<NoteExplorerProps> = ({
   searchQuery,
   onSearchChange,
   onSelectNote,
-  onCreateNote
+  onCreateNote,
+  onEmptyTrash
 }) => {
   const getViewTitle = () => {
     if (currentView.mode === ViewMode.Folder) {
@@ -38,12 +40,22 @@ const NoteExplorer: React.FC<NoteExplorerProps> = ({
     <aside className="w-full md:w-80 flex flex-col border-r border-zinc-200 dark:border-zinc-800 shrink-0 bg-white dark:bg-zinc-950">
       <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
         <h2 className="font-semibold capitalize text-sm">{getViewTitle()}</h2>
-        <button
-          onClick={onCreateNote}
-          className="p-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:opacity-90 transition-opacity"
-        >
-          <Plus size={18} />
-        </button>
+        <div className="flex items-center gap-2">
+          {currentView.mode === ViewMode.Trash && notes.length > 0 && (
+            <button
+              onClick={onEmptyTrash}
+              className="px-2 py-1 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-[10px] font-bold rounded-md border border-red-100 dark:border-red-900/50 hover:bg-red-100 transition-colors"
+            >
+              Empty
+            </button>
+          )}
+          <button
+            onClick={onCreateNote}
+            className="p-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-lg hover:opacity-90 transition-opacity"
+          >
+            <Plus size={18} />
+          </button>
+        </div>
       </div>
 
       <div className="p-4">

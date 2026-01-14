@@ -9,6 +9,7 @@ interface FolderModalProps {
   onFolderIconChange: (icon: string) => void;
   onSave: () => void;
   onClose: () => void;
+  isEditing?: boolean;
 }
 
 const EMOJI_OPTIONS = ['📁', '💼', '🎯', '📖', '🎨', '🔬', '💡', '🚀', '❤️', '⭐'];
@@ -23,7 +24,8 @@ const FolderModal: React.FC<FolderModalProps> = ({
   onFolderNameChange,
   onFolderIconChange,
   onSave,
-  onClose
+  onClose,
+  isEditing = false
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -43,7 +45,7 @@ const FolderModal: React.FC<FolderModalProps> = ({
             <div className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl">
               <FolderIcon size={20} />
             </div>
-            Create New Folder
+            {isEditing ? 'Rename Folder' : 'Create New Folder'}
           </h2>
           <button
             onClick={onClose}
@@ -61,8 +63,8 @@ const FolderModal: React.FC<FolderModalProps> = ({
                 key={emoji}
                 onClick={() => onFolderIconChange(emoji)}
                 className={`w-10 h-10 text-xl flex items-center justify-center rounded-xl border-2 transition-all ${folderIcon === emoji
-                    ? 'border-zinc-900 dark:border-white bg-zinc-100 dark:bg-zinc-800'
-                    : 'border-zinc-100 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                  ? 'border-zinc-900 dark:border-white bg-zinc-100 dark:bg-zinc-800'
+                  : 'border-zinc-100 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
                   }`}
               >
                 {emoji}
@@ -92,7 +94,7 @@ const FolderModal: React.FC<FolderModalProps> = ({
             onClick={onSave}
             className="flex-1 px-4 py-2 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-xl text-sm font-medium"
           >
-            Create Folder
+            {isEditing ? 'Save Changes' : 'Create Folder'}
           </button>
         </div>
       </div>

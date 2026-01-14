@@ -9,9 +9,11 @@ import {
   Sun,
   Moon,
   Menu,
+  Pencil,
 } from "lucide-react";
 import { Folder, ViewMode, AppSettings } from "../../../types";
 import SidebarNavItem from "./SidebarNavItem";
+import { UserButton } from "@clerk/clerk-react";
 
 interface SidebarProps {
   folders: Folder[];
@@ -27,6 +29,8 @@ interface SidebarProps {
     tab?: "appearance" | "editor" | "tags" | "sync" | "data",
   ) => void;
   onCreateFolder: () => void;
+  onRenameFolder: (folder: Folder) => void;
+  onDeleteFolder: (folder: Folder) => void;
 }
 
 /**
@@ -44,6 +48,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleTheme,
   onOpenSettings,
   onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
 }) => {
   return (
     <aside
@@ -51,7 +57,9 @@ const Sidebar: React.FC<SidebarProps> = ({
     >
       <div className="p-4 flex items-center justify-between shrink-0">
         {!isCollapsed && (
-          <div className="font-bold text-xl tracking-tighter">Super Notes</div>
+          <div className="font-black text-lg tracking-tighter italic">
+            JAM<span className="text-zinc-500"></span>
+          </div>
         )}
         <button
           onClick={() => onSetCollapsed(!isCollapsed)}
@@ -106,10 +114,22 @@ const Sidebar: React.FC<SidebarProps> = ({
                 icon={<span>{f.icon}</span>}
                 label={f.name}
                 active={
-                  currentView.mode === ViewMode.Folder &&
                   currentView.id === f.id
                 }
                 onClick={() => onSetView({ mode: ViewMode.Folder, id: f.id })}
+                actions={[
+                  {
+                    icon: <Pencil size={12} />,
+                    onClick: () => onRenameFolder(f),
+                    title: "Rename",
+                  },
+                  {
+                    icon: <Trash2 size={12} />,
+                    onClick: () => onDeleteFolder(f),
+                    title: "Delete",
+                    className: "hover:text-red-500",
+                  },
+                ]}
               />
             ))}
 
@@ -145,20 +165,36 @@ const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between shrink-0">
-        <button
-          onClick={onToggleTheme}
-          className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors"
-          title="Toggle Theme"
-        >
-          {settings.theme === "light" ? <Moon size={20} /> : <Sun size={20} />}
-        </button>
-        <button
-          onClick={() => onOpenSettings("appearance")}
-          className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors"
-          title="Open Settings"
-        >
-          <SettingsIcon size={20} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={onToggleTheme}
+            className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors"
+            title="Toggle Theme"
+          >
+            {settings.theme === "light" ? (
+              <Moon size={20} />
+            ) : (
+              <Sun size={20} />
+            )}
+          </button>
+          <button
+            onClick={() => onOpenSettings("appearance")}
+            className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors"
+            title="Open Settings"
+          >
+            <SettingsIcon size={20} />
+          </button>
+        </div>
+        <div className="pl-2 border-l border-zinc-200 dark:border-zinc-800">
+          <UserButton
+            afterSignOutUrl="/"
+            appearance={{
+              elements: {
+                avatarBox: "w-8 h-8 rounded-lg",
+              },
+            }}
+          />
+        </div>
       </div>
     </aside>
   );

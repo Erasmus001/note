@@ -12,6 +12,7 @@ export { default as AttachmentRenderer } from "./attachments/AttachmentRenderer"
 export { default as TweetEmbed } from "./attachments/TweetEmbed";
 
 export { default as AutoResizeTextarea } from "./ui/AutoResizeTextarea";
+export { default as OfflineBanner } from "./ui/OfflineBanner";
 
 export { default as ImagePreviewModal } from "./modals/ImagePreviewModal";
 export { default as FolderModal } from "./modals/FolderModal";
