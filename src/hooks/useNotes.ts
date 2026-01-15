@@ -74,7 +74,7 @@ export const useNotes = () => {
   const tagUsage = useMemo(() => {
     const counts: Record<string, number> = {};
     notes.forEach((n) => {
-      if (!n.isTrashed) {
+      if (!n.isTrashed && n.tags) {
         n.tags.forEach((t) => {
           counts[t] = (counts[t] || 0) + 1;
         });

@@ -49,7 +49,7 @@ const NoteListItem: React.FC<NoteListItemProps> = React.memo(
       </p>
       <div className="flex items-center justify-between mt-3">
         <div className="flex gap-1">
-          {note.tags.slice(0, 1).map((t) => (
+          {(note.tags || []).slice(0, 1).map((t) => (
             <span
               key={t}
               className="text-[9px] px-1.5 py-0.5 bg-zinc-200 text-zinc-600 rounded-sm font-bold"
